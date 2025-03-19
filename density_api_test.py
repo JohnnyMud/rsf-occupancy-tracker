@@ -3,15 +3,21 @@ import pandas as pd
 from datetime import datetime
 import os
 import time
+from dotenv import load_dotenv
+
+# Get configuration from environment variables
+load_dotenv()
 
 # API endpoint for getting the gym crowd data
-url = "https://api.density.io/v2/spaces/spc_863128347956216317/count"
+url = os.getenv("DENSITY_API_URL")
+api_key = os.getenv("DENSITY_API_KEY")
+max_capacity = int(os.getenv("MAX_CAPACITY", 150))  # 150 as default if not set
+
 headers = {
-    "Authorization": "Bearer shr_o69HxjQ0BYrY2FPD9HxdirhJYcFDCeRolEd744Uj88e"
+    "Authorization": f"Bearer {api_key}"
 }
 
 filename = "rsf_gym_crowd_data.csv"
-max_capacity = 150
 
 # Function to get and save the gym crowd data
 def get_gym_crowd_data():
