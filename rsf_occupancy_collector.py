@@ -27,17 +27,21 @@ def setup_google_sheets():
         'https://www.googleapis.com/auth/drive'
     ]
     
+    # Path to credentials file when running in GitHub Actions
+    credentials_path = 'credentials.json'
+    
     credentials = Credentials.from_service_account_file(
-        '/Users/johnnymudawar/rsf_project/credentials.json',  
+        credentials_path,
         scopes=scope
     )
     
     client = gspread.authorize(credentials)
     
-    # Open by spreadsheet name
-    spreadsheet = client.open(os.getenv("SPREADSHEET_NAME", "RSF_DATA"))
+    # Open by spreadsheet name from environment variable
+    spreadsheet_name = os.getenv("SPREADSHEET_NAME", "RSF Occupancy Data")
+    spreadsheet = client.open(spreadsheet_name)
     
-    # Use the first sheet or create a specific one
+    # Use the first sheet
     worksheet = spreadsheet.sheet1
     
     return worksheet

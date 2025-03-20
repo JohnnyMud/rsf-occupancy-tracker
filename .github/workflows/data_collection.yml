@@ -28,5 +28,14 @@ jobs:
       - name: Install Dependencies
         run: pip install -r requirements.txt  # Modify if necessary
 
+      - name: Set up Google Credentials
+        run: |
+          echo "${{ secrets.GOOGLE_CREDENTIALS_BASE64 }}" | base64 --decode > credentials.json
+
       - name: Run Python Script
-        run: python your_script.py  # Replace with your actual script
+        run: python rsf_occupancy_collector.py
+        env:
+          DENSITY_API_KEY: ${{ secrets.DENSITY_API_KEY }}
+          DENSITY_API_URL: ${{ secrets.DENSITY_API_URL }}
+          MAX_CAPACITY: ${{ secrets.MAX_CAPACITY }}
+          SPREADSHEET_NAME: ${{ secrets.SPREADSHEET_NAME }}
