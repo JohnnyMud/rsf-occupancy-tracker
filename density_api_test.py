@@ -2,7 +2,6 @@ import requests
 import pandas as pd
 from datetime import datetime
 import os
-import time
 from dotenv import load_dotenv
 
 # Get configuration from environment variables
