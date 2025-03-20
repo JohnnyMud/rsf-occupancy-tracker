@@ -1,7 +1,8 @@
-# Environment variables and secrets
+# Environment variables and Google API credentials
 .env
 *.env
 .env.*
+credentials.json
 
 # Data files
 rsf_gym_crowd_data.csv
