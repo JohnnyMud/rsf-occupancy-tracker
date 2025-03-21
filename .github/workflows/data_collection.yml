@@ -3,13 +3,13 @@ name: Run Python Script at Specific Times
 on:
   schedule:
     # Monday to Friday (PST 7AM - 11PM → UTC 3PM - 7AM next day)
-    - cron: "0,20 15-23,0-7 * * 1-5"
+    - cron: "*/20 15-23,0-7 * * 1-5"
 
     # Saturday (PST 8AM - 6PM → UTC 4PM - 2AM next day)
-    - cron: "0,20 16-23,0-2 * * 6"
+    - cron: "*/20 16-23,0-2 * * 6"
 
     # Sunday (PST 8AM - 11PM → UTC 4PM - 7AM next day)
-    - cron: "0,20 16-23,0-7 * * 0"
+    - cron: "*/20 16-23,0-7 * * 0"
 
   workflow_dispatch:  # Allows manual triggering if needed
 
