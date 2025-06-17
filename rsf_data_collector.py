@@ -18,7 +18,7 @@ headers = {
 }
 
 filename = "rsf_gym_crowd_data.csv"
-max_capacity = int(os.getenv("MAX_CAPACITY", 150))
+max_capacity = 150
 
 # Google Sheets setup
 def setup_google_sheets():
@@ -37,8 +37,7 @@ def setup_google_sheets():
     
     client = gspread.authorize(credentials)
     
-    # Open by spreadsheet name from environment variable
-    spreadsheet_name = os.getenv("SPREADSHEET_NAME", "RSF Occupancy Data")
+    spreadsheet_name = 'RSF_DATA'
     spreadsheet = client.open(spreadsheet_name)
     
     # Use the first sheet
