@@ -47,6 +47,14 @@ def create_hourly_average():
                      yaxis_title="Average Occupancy %")
     return fig
 
+def create_histogram():
+    fig = px.histogram(df, x='percentage_capacity')
+    fig.update_layout(title="Distribution of Gym Occupancy",
+                     xaxis_title="Occupancy %",
+                     yaxis_title="Count")
+    return fig
+
+#Data Distribution and Averages
 app.layout = html.Div([
     html.H1(children='RSF Gym Occupancy Tracker', 
             style={'textAlign': 'center', 'color': '#2c3e50', 'marginBottom': '30px'}),
@@ -62,7 +70,8 @@ app.layout = html.Div([
             ], style={'padding': '20px', 'backgroundColor': '#f8f9fa', 'borderRadius': '10px'})
         ], style={'width': '30%', 'display': 'inline-block', 'verticalAlign': 'top', 'padding': '20px'}),
         html.Div([
-            dcc.Graph(figure=create_daily_average())
+            dcc.Graph(figure=create_daily_average()),
+            dcc.Graph(figure=create_histogram())
         ], style={'width': '70%', 'display': 'inline-block'})
     ]),
 

@@ -21,8 +21,8 @@ def filter_gym_data():
     df = df[(df['pst_timestamp'] >= spring_break_end) & (df['pst_timestamp'] <= end_of_semester)]
     #Only keep data points recorded within hours of operation (due to issues with github workflow)
     df = df[(df['pst_timestamp'].dt.hour >= 7) & (df['pst_timestamp'].dt.hour < 23)]
-    #Remove data points where the gym is 0% full
-    df = df[df['percentage_capacity'] > 1]
+    #Remove data points where the gym is 0% full and over 100% full
+    df['percentage_capacity'] = df['percentage_capacity'].clip(lower=1, upper=100)
     #Drop UTC timestamp
     df = df.drop(columns=['timestamp'])
     return df
