@@ -74,8 +74,6 @@ app.layout = html.Div([
             dcc.Graph(figure=create_histogram())
         ], style={'width': '70%', 'display': 'inline-block'})
     ]),
-
-    dash_table.DataTable(data=df.to_dict('records'), page_size=10),
     
     html.Div([
         html.Div([
