@@ -9,6 +9,23 @@ df = fetch.data
 pivot = fetch.pivot_table
 avg_capacity = df['percentage_capacity'].mean()
 
+# Calculate key statistics
+daily_stats = df.groupby('weekday')['percentage_capacity'].mean().sort_values()
+hourly_stats = df.groupby('hour')['percentage_capacity'].mean().sort_values()
+
+least_busy_day = daily_stats.index[0]
+least_busy_day_avg = daily_stats.iloc[0]
+most_busy_day = daily_stats.index[-1]
+most_busy_day_avg = daily_stats.iloc[-1]
+
+least_busy_hour = hourly_stats.index[0]
+least_busy_hour_avg = hourly_stats.iloc[0]
+most_busy_hour = hourly_stats.index[-1]
+most_busy_hour_avg = hourly_stats.iloc[-1]
+
+# Calculate peak hours (4-6 PM average)
+peak_hours_avg = df[df['hour'].isin([16, 17, 18])]['percentage_capacity'].mean()
+
 app = Dash()
 
 # Create visualizations
@@ -63,12 +80,13 @@ app.layout = html.Div([
         html.Div([
             html.H3("Best Times to Visit", style={'textAlign': 'center'}),
             html.Div([
-                html.P("• Least busy day: Sunday (avg. 54% capacity)"),
-                html.P("• Least busy hours: 7 AM (avg. 43% capacity)"),
-                html.P("• Most busy hours: 4-6 PM (avg. 85% capacity)"),
-                html.P("• Most busy day: Tuesday (avg. 73% capacity)"),
+                html.P(f"• Least busy day: {least_busy_day} (avg. {least_busy_day_avg:.1f}% capacity)"),
+                html.P(f"• Least busy hours: {least_busy_hour} (avg. {least_busy_hour_avg:.1f}% capacity)"),
+                html.P(f"• Most busy hours: 4-6 PM (avg. {peak_hours_avg:.1f}% capacity)"),
+                html.P(f"• Most busy day: {most_busy_day} (avg. {most_busy_day_avg:.1f}% capacity)"),
             ], style={'padding': '20px', 'backgroundColor': '#f8f9fa', 'borderRadius': '10px'})
         ], style={'width': '30%', 'display': 'inline-block', 'verticalAlign': 'top', 'padding': '20px'}),
+        
         html.Div([
             dcc.Graph(figure=create_daily_average()),
             dcc.Graph(figure=create_histogram())
