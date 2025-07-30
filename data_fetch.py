@@ -1,5 +1,5 @@
 import pandas as pd
-
+import numpy as np
 import rsf_data_collector as rsf
 
 def get_df():
@@ -20,7 +20,7 @@ def filter_gym_data():
     df['percentage_capacity'] = df['percentage_capacity'].astype(float).round()
     df = df[(df['pst_timestamp'] >= spring_break_end) & (df['pst_timestamp'] <= end_of_semester)]
     df = df[(df['pst_timestamp'].dt.hour >= 7) & (df['pst_timestamp'].dt.hour < 23)]
-    df['percentage_capacity'] = df['percentage_capacity'].clip(lower=1, upper=100)
+    df['percentage_capacity'] = df['percentage_capacity'].clip(lower=2, upper=100)
     df = df.drop(columns=['timestamp'])
     return df
 
@@ -41,4 +41,6 @@ data = data[['pst_timestamp', 'pst_hour', 'weekday', 'hour', 'percentage_capacit
 
 # Pivot table for heatmap visualization
 pivot_table = data.pivot_table(index='weekday', columns='hour', values='percentage_capacity', aggfunc='mean')
+null_hrs = [i for i in pivot_table.columns if i >= 18]
+pivot_table.loc['Saturday', null_hrs] = np.nan
 pivot_table.columns = [f'{hour} AM' if hour < 12 else '12 PM' if hour == 12 else f'{hour - 12} PM' for hour in pivot_table.columns]
