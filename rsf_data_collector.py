@@ -1,16 +1,13 @@
+import os
+from datetime import datetime
+
+from dotenv import load_dotenv
 import requests
 import pandas as pd
-from datetime import datetime
-import os
-import time
-from dotenv import load_dotenv
 import gspread
 from google.oauth2.service_account import Credentials
 
-# Load environment variables
 load_dotenv()
-
-# API endpoint for getting the gym crowd data
 url = os.getenv("DENSITY_API_URL")
 api_key = os.getenv("DENSITY_API_KEY")
 headers = {
@@ -26,23 +23,17 @@ def setup_google_sheets():
         'https://www.googleapis.com/auth/spreadsheets',
         'https://www.googleapis.com/auth/drive'
     ]
-    
     # Path to credentials file when running in GitHub Actions
     credentials_path = 'credentials.json'
-    
     credentials = Credentials.from_service_account_file(
         credentials_path,
         scopes=scope
     )
     
     client = gspread.authorize(credentials)
-    
     spreadsheet_name = 'RSF_DATA'
     spreadsheet = client.open(spreadsheet_name)
-    
-    # Use the first sheet
     worksheet = spreadsheet.sheet1
-    
     return worksheet
 
 # Function to get and save the gym crowd data
@@ -58,8 +49,6 @@ def get_gym_crowd_data():
 
         # Create a DataFrame record for the current timestamp
         df = pd.DataFrame({'timestamp': [timestamp], 'percentage_capacity': [percentage_capacity]})
-
-        # Append the data to the CSV file
         df.to_csv(filename, mode='a', index=False, header=not os.path.exists(filename))
         
         # Update Google Sheet
@@ -68,7 +57,6 @@ def get_gym_crowd_data():
             # Check if headers exist, add them if not
             if worksheet.row_count == 0:
                 worksheet.append_row(['timestamp', 'percentage_capacity'])
-            
             # Add the new data
             worksheet.append_row([timestamp, f"{percentage_capacity:.2f}"])
             print(f"Data saved to CSV and Google Sheets for {timestamp}")

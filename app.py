@@ -2,6 +2,7 @@ from dash import Dash, html, dcc, callback, Output, Input, dash_table
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
+
 import data_fetch as fetch
 
 # Load in data
@@ -10,18 +11,18 @@ pivot = fetch.pivot_table
 avg_capacity = df['percentage_capacity'].mean()
 
 # Calculate key statistics
-daily_stats = df.groupby('weekday')['percentage_capacity'].mean().sort_values()
-hourly_stats = df.groupby('hour')['percentage_capacity'].mean().sort_values()
+weekday_avgs = df.groupby('weekday')['percentage_capacity'].mean().sort_values()
+hourly_avgs = df.groupby('hour')['percentage_capacity'].mean().sort_values()
 
-least_busy_day = daily_stats.index[0]
-least_busy_day_avg = daily_stats.iloc[0]
-most_busy_day = daily_stats.index[-1]
-most_busy_day_avg = daily_stats.iloc[-1]
+least_busy_day = weekday_avgs.index[0]
+least_busy_day_avg = weekday_avgs.iloc[0]
+most_busy_day = weekday_avgs.index[-1]
+most_busy_day_avg = weekday_avgs.iloc[-1]
 
-least_busy_hour = hourly_stats.index[0]
-least_busy_hour_avg = hourly_stats.iloc[0]
-most_busy_hour = hourly_stats.index[-1]
-most_busy_hour_avg = hourly_stats.iloc[-1]
+least_busy_hour = hourly_avgs.index[0]
+least_busy_hour_avg = hourly_avgs.iloc[0]
+most_busy_hour = hourly_avgs.index[-1]
+most_busy_hour_avg = hourly_avgs.iloc[-1]
 
 # Calculate peak hours (4-6 PM average)
 peak_hours_avg = df[df['hour'].isin([16, 17, 18])]['percentage_capacity'].mean()
