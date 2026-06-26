@@ -33,7 +33,7 @@ jobs:
           echo "${{ secrets.GOOGLE_CREDENTIALS_BASE64 }}" | base64 --decode > credentials.json
 
       - name: Run Python Script
-        run: python rsf_occupancy_collector.py
+        run: python rsf_data_collector.py
         env:
           DENSITY_API_KEY: ${{ secrets.DENSITY_API_KEY }}
           DENSITY_API_URL: ${{ secrets.DENSITY_API_URL }}
