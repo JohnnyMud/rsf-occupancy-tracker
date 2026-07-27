@@ -1,0 +1,122 @@
+:root {
+    --berkeley-blue: #003262;
+    --berkeley-gold: #fdb515;
+    --surface: #f4f6f9;
+    --text-muted: #6c757d;
+}
+
+body {
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background-color: var(--surface);
+}
+
+.navbar-brand-subtitle {
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.75) !important;
+}
+
+.hero-section {
+    background: linear-gradient(135deg, var(--berkeley-blue) 0%, #004d7a 100%);
+    border-radius: 0.75rem;
+    color: white;
+    padding: 2rem;
+    margin-bottom: 1.5rem;
+}
+
+.hero-section h1 {
+    font-weight: 700;
+    font-size: 1.75rem;
+    margin-bottom: 0.25rem;
+}
+
+.hero-section p {
+    color: rgba(255, 255, 255, 0.85);
+    margin-bottom: 0;
+}
+
+.kpi-card {
+    border: none;
+    border-radius: 0.75rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    height: 100%;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.kpi-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.kpi-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--berkeley-blue);
+    line-height: 1.2;
+}
+
+.kpi-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+}
+
+.chart-card {
+    border: none;
+    border-radius: 0.75rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    margin-bottom: 1.5rem;
+    height: 100%;
+}
+
+.insights-card {
+    border: none;
+    border-radius: 0.75rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    height: 100%;
+}
+
+.insights-card .card-header {
+    background-color: var(--berkeley-blue);
+    color: white;
+    font-weight: 600;
+    border-radius: 0.75rem 0.75rem 0 0 !important;
+}
+
+.insight-item {
+    border-left: 3px solid var(--berkeley-gold);
+    padding-left: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.insight-item:last-child {
+    margin-bottom: 0;
+}
+
+.insight-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+    margin-bottom: 0.15rem;
+}
+
+.insight-value {
+    font-weight: 600;
+    color: #212529;
+    margin-bottom: 0;
+}
+
+.footer-text {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.section-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--berkeley-blue);
+    margin-bottom: 1rem;
+}

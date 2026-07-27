@@ -1,0 +1,21 @@
+[project]
+name = "rsf-occupancy-tracker"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "dash>=4.3.0",
+    "dash-bootstrap-components>=2.0.4",
+    "fastapi>=0.138.2",
+    "google-auth>=2.56.2",
+    "gspread>=6.2.1",
+    "matplotlib>=3.11.1",
+    "numpy>=2.5.1",
+    "pandas>=3.0.5",
+    "plotly>=6.8.0",
+    "python-dotenv>=1.2.2",
+    "requests>=2.34.2",
+    "schedule>=1.2.2",
+    "seaborn>=0.13.2",
+]
