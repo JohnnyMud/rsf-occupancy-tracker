@@ -16,12 +16,7 @@ from urllib3.util.retry import Retry
 
 LOGGER = logging.getLogger(__name__)
 LOCAL_TIMEZONE = ZoneInfo("America/Los_Angeles")
-CANONICAL_HEADERS = (
-    "timestamp_utc",
-    "occupancy_count",
-    "max_capacity",
-    "percentage_capacity",
-)
+STORAGE_HEADERS = ("timestamp", "percentage_capacity")
 GOOGLE_SCOPES = (
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
@@ -106,25 +101,28 @@ class OccupancyRecord:
     def percentage_capacity(self) -> float:
         return (self.occupancy_count / self.max_capacity) * 100
 
-    def as_mapping(self) -> dict[str, str | float | int]:
+    def as_mapping(self) -> dict[str, str | float]:
         return {
-            "timestamp_utc": self.timestamp_utc.isoformat().replace("+00:00", "Z"),
-            "occupancy_count": self.occupancy_count,
-            "max_capacity": self.max_capacity,
+            "timestamp": self.timestamp_utc.astimezone(timezone.utc).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            ),
             "percentage_capacity": round(self.percentage_capacity, 2),
         }
 
 
-def collection_slot(now: datetime | None = None) -> datetime:
-    """Return the current UTC half-hour slot used as the record key."""
+def current_utc_timestamp(now: datetime | None = None) -> datetime:
     current = now or datetime.now(timezone.utc)
     if current.tzinfo is None:
         raise ValueError("Collection timestamps must be timezone-aware")
-    current_utc = current.astimezone(timezone.utc)
+    return current.astimezone(timezone.utc).replace(microsecond=0)
+
+
+def collection_slot(now: datetime | None = None) -> datetime:
+    """Return the current UTC half-hour slot used as the record key."""
+    current_utc = current_utc_timestamp(now)
     return current_utc.replace(
         minute=(current_utc.minute // 30) * 30,
         second=0,
-        microsecond=0,
     )
 
 
@@ -205,17 +203,30 @@ def setup_google_sheets(
     return spreadsheet.sheet1
 
 
-def ensure_canonical_headers(worksheet) -> list[str]:
+def ensure_storage_headers(worksheet) -> None:
     headers = worksheet.row_values(1)
     if not headers:
-        worksheet.append_row(list(CANONICAL_HEADERS))
-        return list(CANONICAL_HEADERS)
+        worksheet.append_row(list(STORAGE_HEADERS))
+        return
+    if tuple(headers[:2]) != STORAGE_HEADERS:
+        raise ValueError(
+            "Google Sheet must begin with timestamp and percentage_capacity columns"
+        )
 
-    for header in CANONICAL_HEADERS:
-        if header not in headers:
-            headers.append(header)
-            worksheet.update_cell(1, len(headers), header)
-    return headers
+
+def is_duplicate_slot(timestamp_values: list[str], timestamp_utc: datetime) -> bool:
+    target_slot = collection_slot(timestamp_utc)
+    for value in timestamp_values:
+        try:
+            stored_timestamp = datetime.strptime(
+                value,
+                "%Y-%m-%d %H:%M:%S",
+            ).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        if collection_slot(stored_timestamp) == target_slot:
+            return True
+    return False
 
 
 def save_to_google_sheets(
@@ -226,17 +237,16 @@ def save_to_google_sheets(
         settings.spreadsheet_name,
         settings.credentials_path,
     )
-    headers = ensure_canonical_headers(worksheet)
+    ensure_storage_headers(worksheet)
     values = record.as_mapping()
-    timestamp = str(values["timestamp_utc"])
-    timestamp_column = headers.index("timestamp_utc") + 1
+    timestamp = str(values["timestamp"])
 
-    if worksheet.find(timestamp, in_column=timestamp_column) is not None:
-        LOGGER.info("Google Sheets already contains collection slot %s", timestamp)
+    if is_duplicate_slot(worksheet.col_values(1)[1:], record.timestamp_utc):
+        LOGGER.info("Google Sheets already contains the half-hour slot for %s", timestamp)
         return False
 
     worksheet.append_row(
-        [values.get(header, "") for header in headers],
+        [values["timestamp"], values["percentage_capacity"]],
         value_input_option="RAW",
     )
     return True
@@ -244,23 +254,26 @@ def save_to_google_sheets(
 
 def save_to_csv(record: OccupancyRecord, csv_path: Path) -> bool:
     values = record.as_mapping()
-    timestamp = str(values["timestamp_utc"])
+    timestamp = str(values["timestamp"])
 
     if csv_path.exists():
         with csv_path.open(newline="", encoding="utf-8") as csv_file:
             reader = csv.DictReader(csv_file)
-            if tuple(reader.fieldnames or ()) != CANONICAL_HEADERS:
+            if tuple(reader.fieldnames or ()) != STORAGE_HEADERS:
                 raise ValueError(
-                    f"{csv_path} uses a legacy schema; move or migrate it before collecting"
+                    f"{csv_path} must use the timestamp, percentage_capacity schema"
                 )
-            if any(row["timestamp_utc"] == timestamp for row in reader):
-                LOGGER.info("CSV already contains collection slot %s", timestamp)
+            if is_duplicate_slot(
+                [row["timestamp"] for row in reader],
+                record.timestamp_utc,
+            ):
+                LOGGER.info("CSV already contains the half-hour slot for %s", timestamp)
                 return False
 
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     write_header = not csv_path.exists()
     with csv_path.open("a", newline="", encoding="utf-8") as csv_file:
-        writer = csv.DictWriter(csv_file, fieldnames=CANONICAL_HEADERS)
+        writer = csv.DictWriter(csv_file, fieldnames=STORAGE_HEADERS)
         if write_header:
             writer.writeheader()
         writer.writerow(values)
@@ -268,7 +281,7 @@ def save_to_csv(record: OccupancyRecord, csv_path: Path) -> bool:
 
 
 def collect(settings: CollectorSettings, now: datetime | None = None) -> OccupancyRecord | None:
-    timestamp = collection_slot(now)
+    timestamp = current_utc_timestamp(now)
     if not settings.force_collection and not is_during_operating_hours(timestamp):
         LOGGER.info(
             "Skipping collection outside RSF operating hours (%s)",
@@ -284,7 +297,7 @@ def collect(settings: CollectorSettings, now: datetime | None = None) -> Occupan
     )
     save_to_csv(record, settings.csv_path)
     save_to_google_sheets(record, settings)
-    LOGGER.info("Saved occupancy record for %s", record.as_mapping()["timestamp_utc"])
+    LOGGER.info("Saved occupancy record for %s", record.as_mapping()["timestamp"])
     return record
 
 

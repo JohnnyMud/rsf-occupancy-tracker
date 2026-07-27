@@ -67,24 +67,62 @@ def test_fetch_occupancy_count_validates_and_uses_timeout(tmp_path):
     assert count == 42
 
 
-def test_csv_storage_uses_canonical_schema_and_skips_duplicate(tmp_path):
+def test_csv_storage_uses_existing_schema_and_skips_duplicate_slot(tmp_path):
     settings = make_settings(tmp_path)
     record = collector.OccupancyRecord(
-        timestamp_utc=datetime(2026, 7, 27, 20, 30, tzinfo=timezone.utc),
+        timestamp_utc=datetime(2026, 7, 27, 20, 34, tzinfo=timezone.utc),
         occupancy_count=42,
+        max_capacity=150,
+    )
+    duplicate_slot = collector.OccupancyRecord(
+        timestamp_utc=datetime(2026, 7, 27, 20, 48, tzinfo=timezone.utc),
+        occupancy_count=40,
         max_capacity=150,
     )
 
     assert collector.save_to_csv(record, settings.csv_path) is True
-    assert collector.save_to_csv(record, settings.csv_path) is False
+    assert collector.save_to_csv(duplicate_slot, settings.csv_path) is False
 
     with settings.csv_path.open(newline="", encoding="utf-8") as csv_file:
         rows = list(csv.DictReader(csv_file))
 
-    assert tuple(rows[0]) == collector.CANONICAL_HEADERS
+    assert tuple(rows[0]) == collector.STORAGE_HEADERS
     assert len(rows) == 1
-    assert rows[0]["timestamp_utc"] == "2026-07-27T20:30:00Z"
+    assert rows[0]["timestamp"] == "2026-07-27 20:34:00"
     assert rows[0]["percentage_capacity"] == "28.0"
+
+
+def test_google_sheets_write_leaves_formula_column_alone(tmp_path, monkeypatch):
+    class Worksheet:
+        appended_rows = []
+
+        def row_values(self, row):
+            assert row == 1
+            return ["timestamp", "percentage_capacity", "pst_timestamp"]
+
+        def col_values(self, column):
+            assert column == 1
+            return ["timestamp"]
+
+        def append_row(self, values, value_input_option):
+            self.appended_rows.append((values, value_input_option))
+
+    worksheet = Worksheet()
+    monkeypatch.setattr(
+        collector,
+        "setup_google_sheets",
+        lambda spreadsheet_name, credentials_path: worksheet,
+    )
+    record = collector.OccupancyRecord(
+        timestamp_utc=datetime(2026, 7, 27, 20, 4, tzinfo=timezone.utc),
+        occupancy_count=32,
+        max_capacity=150,
+    )
+
+    assert collector.save_to_google_sheets(record, make_settings(tmp_path)) is True
+    assert worksheet.appended_rows == [
+        (["2026-07-27 20:04:00", 21.33], "RAW")
+    ]
 
 
 def test_invalid_capacity_configuration_exits_early(monkeypatch):
