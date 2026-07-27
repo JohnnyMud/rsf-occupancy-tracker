@@ -9,7 +9,6 @@ from google.oauth2.service_account import Credentials
 
 load_dotenv()
 url = os.getenv("DENSITY_API_URL")
-print("-".join(list(url)))
 api_key = os.getenv("DENSITY_API_KEY")
 headers = {
     "Authorization": f"Bearer {api_key}"
