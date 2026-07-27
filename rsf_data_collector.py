@@ -11,12 +11,14 @@ import gspread
 import requests
 from dotenv import load_dotenv
 from google.oauth2.service_account import Credentials
+from gspread.utils import rowcol_to_a1
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 LOGGER = logging.getLogger(__name__)
 LOCAL_TIMEZONE = ZoneInfo("America/Los_Angeles")
 STORAGE_HEADERS = ("timestamp", "percentage_capacity")
+PST_TIMESTAMP_HEADERS = ("pst_timestamp", "pst_capacity")
 GOOGLE_SCOPES = (
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
@@ -101,12 +103,12 @@ class OccupancyRecord:
     def percentage_capacity(self) -> float:
         return (self.occupancy_count / self.max_capacity) * 100
 
-    def as_mapping(self) -> dict[str, str | float]:
+    def as_mapping(self) -> dict[str, str]:
         return {
             "timestamp": self.timestamp_utc.astimezone(timezone.utc).strftime(
                 "%Y-%m-%d %H:%M:%S"
             ),
-            "percentage_capacity": round(self.percentage_capacity, 2),
+            "percentage_capacity": f"{self.percentage_capacity:.2f}",
         }
 
 
@@ -203,15 +205,37 @@ def setup_google_sheets(
     return spreadsheet.sheet1
 
 
-def ensure_storage_headers(worksheet) -> None:
+def ensure_storage_headers(worksheet) -> list[str]:
     headers = worksheet.row_values(1)
     if not headers:
         worksheet.append_row(list(STORAGE_HEADERS))
-        return
+        return list(STORAGE_HEADERS)
     if tuple(headers[:2]) != STORAGE_HEADERS:
         raise ValueError(
             "Google Sheet must begin with timestamp and percentage_capacity columns"
         )
+    return headers
+
+
+def format_pst_timestamp_column(worksheet, headers: list[str]) -> None:
+    pst_header = next(
+        (header for header in PST_TIMESTAMP_HEADERS if header in headers),
+        None,
+    )
+    if pst_header is None:
+        return
+
+    column_index = headers.index(pst_header) + 1
+    column_letter = rowcol_to_a1(1, column_index)[:-1]
+    worksheet.format(
+        f"{column_letter}2:{column_letter}",
+        {
+            "numberFormat": {
+                "type": "DATE_TIME",
+                "pattern": "M/d/yyyy h:mm:AM/PM",
+            }
+        },
+    )
 
 
 def is_duplicate_slot(timestamp_values: list[str], timestamp_utc: datetime) -> bool:
@@ -237,7 +261,7 @@ def save_to_google_sheets(
         settings.spreadsheet_name,
         settings.credentials_path,
     )
-    ensure_storage_headers(worksheet)
+    headers = ensure_storage_headers(worksheet)
     values = record.as_mapping()
     timestamp = str(values["timestamp"])
 
@@ -249,6 +273,7 @@ def save_to_google_sheets(
         [values["timestamp"], values["percentage_capacity"]],
         value_input_option="RAW",
     )
+    format_pst_timestamp_column(worksheet, headers)
     return True
 
 

@@ -89,12 +89,13 @@ def test_csv_storage_uses_existing_schema_and_skips_duplicate_slot(tmp_path):
     assert tuple(rows[0]) == collector.STORAGE_HEADERS
     assert len(rows) == 1
     assert rows[0]["timestamp"] == "2026-07-27 20:34:00"
-    assert rows[0]["percentage_capacity"] == "28.0"
+    assert rows[0]["percentage_capacity"] == "28.00"
 
 
 def test_google_sheets_write_leaves_formula_column_alone(tmp_path, monkeypatch):
     class Worksheet:
         appended_rows = []
+        formatted_ranges = []
 
         def row_values(self, row):
             assert row == 1
@@ -106,6 +107,9 @@ def test_google_sheets_write_leaves_formula_column_alone(tmp_path, monkeypatch):
 
         def append_row(self, values, value_input_option):
             self.appended_rows.append((values, value_input_option))
+
+        def format(self, cell_range, cell_format):
+            self.formatted_ranges.append((cell_range, cell_format))
 
     worksheet = Worksheet()
     monkeypatch.setattr(
@@ -121,7 +125,18 @@ def test_google_sheets_write_leaves_formula_column_alone(tmp_path, monkeypatch):
 
     assert collector.save_to_google_sheets(record, make_settings(tmp_path)) is True
     assert worksheet.appended_rows == [
-        (["2026-07-27 20:04:00", 21.33], "RAW")
+        (["2026-07-27 20:04:00", "21.33"], "RAW")
+    ]
+    assert worksheet.formatted_ranges == [
+        (
+            "C2:C",
+            {
+                "numberFormat": {
+                    "type": "DATE_TIME",
+                    "pattern": "M/d/yyyy h:mm:AM/PM",
+                }
+            },
+        )
     ]
 
 
