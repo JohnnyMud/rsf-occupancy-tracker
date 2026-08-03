@@ -120,3 +120,8 @@ body {
     color: var(--berkeley-blue);
     margin-bottom: 1rem;
 }
+
+.unavailable-alert {
+    border: none;
+    border-radius: 0.75rem;
+}

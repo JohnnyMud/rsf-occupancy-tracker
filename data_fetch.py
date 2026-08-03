@@ -1,22 +1,46 @@
+import logging
+
 import numpy as np
 import pandas as pd
 
 import rsf_data_collector as rsf
 
-
+LOGGER = logging.getLogger(__name__)
 LOCAL_TIMEZONE = "America/Los_Angeles"
+REQUIRED_COLUMNS = (
+    "pst_timestamp",
+    "pst_hour",
+    "weekday",
+    "hour",
+    "percentage_capacity",
+)
+DAY_ORDER = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+]
 
 
-def get_df():
-    sheet = rsf.setup_google_sheets()
+def load_raw_sheet_data(
+    spreadsheet_name: str | None = None,
+    credentials_path: str | None = None,
+) -> pd.DataFrame:
+    """Fetch the raw occupancy sheet. Performs network I/O."""
+    sheet = rsf.setup_google_sheets(spreadsheet_name, credentials_path)
     values = sheet.get_all_values()
     if not values:
         raise ValueError("The occupancy Google Sheet is empty")
     headers = values[0]
+    if not headers:
+        raise ValueError("The occupancy Google Sheet is missing a header row")
     return pd.DataFrame(values[1:], columns=headers)
 
 
-def parse_timestamps(df):
+def parse_timestamps(df: pd.DataFrame) -> pd.Series:
     timestamps = None
 
     if "timestamp_utc" in df:
@@ -36,7 +60,9 @@ def parse_timestamps(df):
             ambiguous="NaT",
             nonexistent="shift_forward",
         )
-        timestamps = legacy_local if timestamps is None else timestamps.fillna(legacy_local)
+        timestamps = (
+            legacy_local if timestamps is None else timestamps.fillna(legacy_local)
+        )
 
     if "timestamp" in df:
         legacy_utc = pd.to_datetime(
@@ -53,7 +79,7 @@ def parse_timestamps(df):
     return timestamps
 
 
-def parse_percentage_capacity(df):
+def parse_percentage_capacity(df: pd.DataFrame) -> pd.Series:
     if "percentage_capacity" in df:
         percentages = pd.to_numeric(df["percentage_capacity"], errors="coerce")
     else:
@@ -67,8 +93,22 @@ def parse_percentage_capacity(df):
     return percentages
 
 
-def filter_gym_data():
-    df = get_df()
+def format_hour_label(hour: int) -> str:
+    if hour == 0:
+        return "12 AM"
+    if hour < 12:
+        return f"{hour} AM"
+    if hour == 12:
+        return "12 PM"
+    return f"{hour - 12} PM"
+
+
+def prepare_occupancy_data(raw_df: pd.DataFrame) -> pd.DataFrame:
+    """Validate and transform raw sheet rows into analysis-ready occupancy data."""
+    if raw_df is None or raw_df.empty:
+        raise ValueError("Occupancy data is empty")
+
+    df = raw_df.copy()
     df["pst_timestamp"] = parse_timestamps(df)
     df["percentage_capacity"] = parse_percentage_capacity(df)
     df = df.dropna(subset=["pst_timestamp", "percentage_capacity"])
@@ -80,55 +120,61 @@ def filter_gym_data():
         & (df["pst_timestamp"] < end_of_semester)
     ]
     df = df[
-        (df["pst_timestamp"].dt.hour >= 7)
-        & (df["pst_timestamp"].dt.hour < 23)
+        (df["pst_timestamp"].dt.hour >= 7) & (df["pst_timestamp"].dt.hour < 23)
     ]
-    df = df.drop(columns=["timestamp"], errors="ignore")
+
+    if df.empty:
+        raise ValueError("No occupancy readings remain after filtering")
+
+    df["hour"] = df["pst_timestamp"].dt.hour.astype(int)
+    df["pst_hour"] = df["hour"].map(format_hour_label)
+    df["weekday"] = df["pst_timestamp"].dt.day_name()
+    df = df.loc[:, list(REQUIRED_COLUMNS)].reset_index(drop=True)
+
+    missing = [column for column in REQUIRED_COLUMNS if column not in df.columns]
+    if missing:
+        raise ValueError(f"Prepared occupancy data is missing columns: {missing}")
+    if df["percentage_capacity"].isna().any():
+        raise ValueError("Prepared occupancy data contains invalid capacity values")
+
     return df
 
 
-data = filter_gym_data()
+def build_heatmap_pivot(data: pd.DataFrame) -> pd.DataFrame:
+    """Build the day/hour occupancy pivot used by the heatmap chart."""
+    if data.empty:
+        raise ValueError("Cannot build a heatmap pivot from empty occupancy data")
 
-# Hour column
-data["pst_hour"] = [
-    (
-        f"{tstamp.hour} AM"
-        if tstamp.hour < 12
-        else "12 PM"
-        if tstamp.hour == 12
-        else f"{tstamp.hour - 12} PM"
+    pivot_table = data.pivot_table(
+        index="weekday",
+        columns="hour",
+        values="percentage_capacity",
+        aggfunc="mean",
     )
-    for tstamp in data["pst_timestamp"]
-]
+    pivot_table = pivot_table.reindex(DAY_ORDER)
+    null_hrs = [hour for hour in pivot_table.columns if hour >= 18]
+    if "Saturday" in pivot_table.index and null_hrs:
+        pivot_table.loc["Saturday", null_hrs] = np.nan
+    pivot_table.columns = [format_hour_label(int(hour)) for hour in pivot_table.columns]
+    return pivot_table
 
-# Weekday column
-data["weekday"] = data["pst_timestamp"].dt.day_name()
 
-# 24hr format hour column
-data["hour"] = [timestamp.hour for timestamp in data["pst_timestamp"]]
+def load_occupancy_data(
+    spreadsheet_name: str | None = None,
+    credentials_path: str | None = None,
+) -> pd.DataFrame:
+    """Load sheet data and return a validated analysis DataFrame."""
+    raw_df = load_raw_sheet_data(spreadsheet_name, credentials_path)
+    return prepare_occupancy_data(raw_df)
 
-# Make columns ordered nicely
-data = data[
-    ["pst_timestamp", "pst_hour", "weekday", "hour", "percentage_capacity"]
-]
 
-# Pivot table for heatmap visualization
-pivot_table = data.pivot_table(
-    index="weekday",
-    columns="hour",
-    values="percentage_capacity",
-    aggfunc="mean",
-)
-null_hrs = [hour for hour in pivot_table.columns if hour >= 18]
-if "Saturday" in pivot_table.index:
-    pivot_table.loc["Saturday", null_hrs] = np.nan
-pivot_table.columns = [
-    (
-        f"{hour} AM"
-        if hour < 12
-        else "12 PM"
-        if hour == 12
-        else f"{hour - 12} PM"
-    )
-    for hour in pivot_table.columns
-]
+def try_load_occupancy_data(
+    spreadsheet_name: str | None = None,
+    credentials_path: str | None = None,
+) -> tuple[pd.DataFrame | None, str | None]:
+    """Load occupancy data, returning (data, error_message)."""
+    try:
+        return load_occupancy_data(spreadsheet_name, credentials_path), None
+    except Exception as exc:
+        LOGGER.exception("Failed to load occupancy data")
+        return None, str(exc)

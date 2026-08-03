@@ -1,18 +1,11 @@
 import dash_bootstrap_components as dbc
+import pandas as pd
 import plotly.express as px
 from dash import Dash, dcc, html
 
 import data_fetch as fetch
 
-DAY_ORDER = [
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-    "Sunday",
-]
+DAY_ORDER = fetch.DAY_ORDER
 
 CHART_LAYOUT = dict(
     paper_bgcolor="rgba(0,0,0,0)",
@@ -26,35 +19,9 @@ CHART_LAYOUT = dict(
 
 COLOR_SCALE = "RdYlGn_r"
 
-df = fetch.data
-pivot = fetch.pivot_table
-avg_capacity = df["percentage_capacity"].mean()
-
-weekday_avgs = df.groupby("weekday")["percentage_capacity"].mean().reindex(DAY_ORDER).dropna()
-hourly_avgs = df.groupby("hour")["percentage_capacity"].mean().sort_values()
-
-least_busy_day = weekday_avgs.idxmin()
-least_busy_day_avg = weekday_avgs.min()
-most_busy_day = weekday_avgs.idxmax()
-most_busy_day_avg = weekday_avgs.max()
-
-least_busy_hour = hourly_avgs.idxmin()
-least_busy_hour_avg = hourly_avgs.min()
-peak_hours_avg = df[df["hour"].isin([16, 17, 18])]["percentage_capacity"].mean()
-
-date_start = df["pst_timestamp"].min().strftime("%b %d, %Y")
-date_end = df["pst_timestamp"].max().strftime("%b %d, %Y")
-total_readings = len(df)
-
 
 def format_hour(hour: int) -> str:
-    if hour == 0:
-        return "12 AM"
-    if hour < 12:
-        return f"{hour} AM"
-    if hour == 12:
-        return "12 PM"
-    return f"{hour - 12} PM"
+    return fetch.format_hour_label(hour)
 
 
 def apply_chart_style(fig, height=380):
@@ -62,7 +29,32 @@ def apply_chart_style(fig, height=380):
     return fig
 
 
-def create_heatmap():
+def compute_insights(df: pd.DataFrame) -> dict:
+    avg_capacity = float(df["percentage_capacity"].mean())
+    weekday_avgs = (
+        df.groupby("weekday")["percentage_capacity"].mean().reindex(DAY_ORDER).dropna()
+    )
+    hourly_avgs = df.groupby("hour")["percentage_capacity"].mean().sort_values()
+    peak_hours_avg = float(
+        df[df["hour"].isin([16, 17, 18])]["percentage_capacity"].mean()
+    )
+
+    return {
+        "avg_capacity": avg_capacity,
+        "least_busy_day": weekday_avgs.idxmin(),
+        "least_busy_day_avg": float(weekday_avgs.min()),
+        "most_busy_day": weekday_avgs.idxmax(),
+        "most_busy_day_avg": float(weekday_avgs.max()),
+        "least_busy_hour": int(hourly_avgs.idxmin()),
+        "least_busy_hour_avg": float(hourly_avgs.min()),
+        "peak_hours_avg": peak_hours_avg,
+        "date_start": df["pst_timestamp"].min().strftime("%b %d, %Y"),
+        "date_end": df["pst_timestamp"].max().strftime("%b %d, %Y"),
+        "total_readings": len(df),
+    }
+
+
+def create_heatmap(pivot: pd.DataFrame):
     ordered_pivot = pivot.reindex(DAY_ORDER)
     fig = px.imshow(
         ordered_pivot,
@@ -78,7 +70,7 @@ def create_heatmap():
     return apply_chart_style(fig, height=420)
 
 
-def create_daily_average():
+def create_daily_average(df: pd.DataFrame, avg_capacity: float):
     daily_avg = (
         df.groupby("weekday")["percentage_capacity"]
         .mean()
@@ -104,7 +96,7 @@ def create_daily_average():
     return apply_chart_style(fig)
 
 
-def create_hourly_average():
+def create_hourly_average(df: pd.DataFrame):
     hourly_avg = df.groupby("hour")["percentage_capacity"].mean().reset_index()
     hourly_avg["hour_label"] = hourly_avg["hour"].apply(format_hour)
     fig = px.line(
@@ -126,7 +118,7 @@ def create_hourly_average():
     return apply_chart_style(fig)
 
 
-def create_histogram():
+def create_histogram(df: pd.DataFrame):
     fig = px.histogram(
         df,
         x="percentage_capacity",
@@ -165,6 +157,255 @@ def insight_block(label, value, detail):
     )
 
 
+def navbar():
+    return dbc.Navbar(
+        dbc.Container(
+            [
+                html.Div(
+                    [
+                        html.Span(
+                            "RSF Occupancy Tracker",
+                            className="navbar-brand fw-bold text-white",
+                        ),
+                        html.Span(
+                            " UC Berkeley Recreational Sports Facility",
+                            className="navbar-brand-subtitle d-none d-md-inline",
+                        ),
+                    ]
+                ),
+            ],
+            fluid=True,
+        ),
+        color="dark",
+        dark=True,
+        className="mb-4 py-3",
+        style={"backgroundColor": "#003262"},
+    )
+
+
+def build_unavailable_layout(error_message: str):
+    return dbc.Container(
+        [
+            navbar(),
+            html.Div(
+                [
+                    html.H1("Occupancy data unavailable"),
+                    html.P(
+                        "The dashboard could not load gym occupancy readings. "
+                        "Check Google Sheets access and try again."
+                    ),
+                ],
+                className="hero-section",
+            ),
+            dbc.Alert(
+                [
+                    html.P("Unable to load occupancy data.", className="mb-1 fw-semibold"),
+                    html.P(error_message or "Unknown error", className="mb-0"),
+                ],
+                color="warning",
+                className="unavailable-alert",
+            ),
+            html.P(
+                [
+                    "Data sourced from on-campus occupancy sensors via the Density API. ",
+                    "Readings are collected every 30 minutes during gym operating hours ",
+                    "(Mon–Fri 7 AM–11 PM, Sat 8 AM–6 PM, Sun 8 AM–11 PM PST). ",
+                    "Values represent estimated percentage of maximum capacity (150 people).",
+                ],
+                className="footer-text text-center mb-4",
+            ),
+        ],
+        fluid=True,
+        className="pb-4",
+        style={"maxWidth": "1400px"},
+    )
+
+
+def build_dashboard_layout(df: pd.DataFrame):
+    insights = compute_insights(df)
+    pivot = fetch.build_heatmap_pivot(df)
+    avg_capacity = insights["avg_capacity"]
+
+    return dbc.Container(
+        [
+            navbar(),
+            html.Div(
+                [
+                    html.H1("When should you hit the gym?"),
+                    html.P(
+                        f"Occupancy trends from {insights['date_start']} to "
+                        f"{insights['date_end']} · "
+                        f"{insights['total_readings']} readings collected every 30 minutes"
+                    ),
+                ],
+                className="hero-section",
+            ),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        kpi_card(
+                            "Overall Average",
+                            f"{avg_capacity:.1f}%",
+                            "Across all operating hours",
+                        ),
+                        lg=3,
+                        md=6,
+                        className="mb-3",
+                    ),
+                    dbc.Col(
+                        kpi_card(
+                            "Quietest Day",
+                            insights["least_busy_day"][:3],
+                            f"Avg. {insights['least_busy_day_avg']:.1f}% capacity",
+                        ),
+                        lg=3,
+                        md=6,
+                        className="mb-3",
+                    ),
+                    dbc.Col(
+                        kpi_card(
+                            "Busiest Day",
+                            insights["most_busy_day"][:3],
+                            f"Avg. {insights['most_busy_day_avg']:.1f}% capacity",
+                        ),
+                        lg=3,
+                        md=6,
+                        className="mb-3",
+                    ),
+                    dbc.Col(
+                        kpi_card(
+                            "Peak Hours",
+                            "4–6 PM",
+                            f"Avg. {insights['peak_hours_avg']:.1f}% capacity",
+                        ),
+                        lg=3,
+                        md=6,
+                        className="mb-3",
+                    ),
+                ],
+                className="mb-2",
+            ),
+            html.P("Occupancy Trends", className="section-title mt-4"),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        dbc.Card(
+                            [
+                                dbc.CardHeader("Best Times to Visit"),
+                                dbc.CardBody(
+                                    [
+                                        insight_block(
+                                            "Least Busy Day",
+                                            insights["least_busy_day"],
+                                            f"Average {insights['least_busy_day_avg']:.1f}% capacity",
+                                        ),
+                                        insight_block(
+                                            "Least Busy Hour",
+                                            format_hour(insights["least_busy_hour"]),
+                                            f"Average {insights['least_busy_hour_avg']:.1f}% capacity",
+                                        ),
+                                        insight_block(
+                                            "Peak Period",
+                                            "4:00 – 6:00 PM",
+                                            f"Average {insights['peak_hours_avg']:.1f}% capacity",
+                                        ),
+                                        insight_block(
+                                            "Most Busy Day",
+                                            insights["most_busy_day"],
+                                            f"Average {insights['most_busy_day_avg']:.1f}% capacity",
+                                        ),
+                                    ]
+                                ),
+                            ],
+                            className="insights-card",
+                        ),
+                        lg=4,
+                        className="mb-3",
+                    ),
+                    dbc.Col(
+                        [
+                            dbc.Card(
+                                dbc.CardBody(
+                                    dcc.Graph(
+                                        figure=create_daily_average(df, avg_capacity),
+                                        config={"displayModeBar": False},
+                                    )
+                                ),
+                                className="chart-card",
+                            )
+                        ],
+                        lg=8,
+                    ),
+                ],
+                className="mb-2",
+            ),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        dbc.Card(
+                            dbc.CardBody(
+                                dcc.Graph(
+                                    figure=create_hourly_average(df),
+                                    config={"displayModeBar": False},
+                                )
+                            ),
+                            className="chart-card",
+                        ),
+                        lg=4,
+                        className="mb-3",
+                    ),
+                    dbc.Col(
+                        dbc.Card(
+                            dbc.CardBody(
+                                dcc.Graph(
+                                    figure=create_heatmap(pivot),
+                                    config={"displayModeBar": False},
+                                )
+                            ),
+                            className="chart-card",
+                        ),
+                        lg=4,
+                        className="mb-3",
+                    ),
+                    dbc.Col(
+                        dbc.Card(
+                            dbc.CardBody(
+                                dcc.Graph(
+                                    figure=create_histogram(df),
+                                    config={"displayModeBar": False},
+                                )
+                            ),
+                            className="chart-card",
+                        ),
+                        lg=4,
+                        className="mb-3",
+                    ),
+                ],
+            ),
+            html.Hr(className="my-4"),
+            html.P(
+                [
+                    "Data sourced from on-campus occupancy sensors via the Density API. ",
+                    "Readings are collected every 30 minutes during gym operating hours ",
+                    "(Mon–Fri 7 AM–11 PM, Sat 8 AM–6 PM, Sun 8 AM–11 PM PST). ",
+                    "Values represent estimated percentage of maximum capacity (150 people).",
+                ],
+                className="footer-text text-center mb-4",
+            ),
+        ],
+        fluid=True,
+        className="pb-4",
+        style={"maxWidth": "1400px"},
+    )
+
+
+def create_layout():
+    data, error_message = fetch.try_load_occupancy_data()
+    if data is None:
+        return build_unavailable_layout(error_message or "Unknown error")
+    return build_dashboard_layout(data)
+
+
 app = Dash(
     __name__,
     external_stylesheets=[
@@ -174,154 +415,7 @@ app = Dash(
     meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=1"}],
 )
 server = app.server
-
-app.layout = dbc.Container(
-    [
-        dbc.Navbar(
-            dbc.Container(
-                [
-                    html.Div(
-                        [
-                            html.Span("RSF Occupancy Tracker", className="navbar-brand fw-bold text-white"),
-                            html.Span(
-                                " UC Berkeley Recreational Sports Facility",
-                                className="navbar-brand-subtitle d-none d-md-inline",
-                            ),
-                        ]
-                    ),
-                ],
-                fluid=True,
-            ),
-            color="dark",
-            dark=True,
-            className="mb-4 py-3",
-            style={"backgroundColor": "#003262"},
-        ),
-        html.Div(
-            [
-                html.H1("When should you hit the gym?"),
-                html.P(
-                    f"Occupancy trends from {date_start} to {date_end} · "
-                    f"· readings collected every 30 minutes"
-                ),
-            ],
-            className="hero-section",
-        ),
-        dbc.Row(
-            [
-                dbc.Col(
-                    kpi_card("Overall Average", f"{avg_capacity:.1f}%", "Across all operating hours"),
-                    lg=3,
-                    md=6,
-                    className="mb-3",
-                ),
-                dbc.Col(
-                    kpi_card("Quietest Day", least_busy_day[:3], f"Avg. {least_busy_day_avg:.1f}% capacity"),
-                    lg=3,
-                    md=6,
-                    className="mb-3",
-                ),
-                dbc.Col(
-                    kpi_card("Busiest Day", most_busy_day[:3], f"Avg. {most_busy_day_avg:.1f}% capacity"),
-                    lg=3,
-                    md=6,
-                    className="mb-3",
-                ),
-                dbc.Col(
-                    kpi_card("Peak Hours", "4–6 PM", f"Avg. {peak_hours_avg:.1f}% capacity"),
-                    lg=3,
-                    md=6,
-                    className="mb-3",
-                ),
-            ],
-            className="mb-2",
-        ),
-        html.P("Occupancy Trends", className="section-title mt-4"),
-        dbc.Row(
-            [
-                dbc.Col(
-                    dbc.Card(
-                        [
-                            dbc.CardHeader("Best Times to Visit"),
-                            dbc.CardBody(
-                                [
-                                    insight_block(
-                                        "Least Busy Day",
-                                        least_busy_day,
-                                        f"Average {least_busy_day_avg:.1f}% capacity",
-                                    ),
-                                    insight_block(
-                                        "Least Busy Hour",
-                                        format_hour(least_busy_hour),
-                                        f"Average {least_busy_hour_avg:.1f}% capacity",
-                                    ),
-                                    insight_block(
-                                        "Peak Period",
-                                        "4:00 – 6:00 PM",
-                                        f"Average {peak_hours_avg:.1f}% capacity",
-                                    ),
-                                    insight_block(
-                                        "Most Busy Day",
-                                        most_busy_day,
-                                        f"Average {most_busy_day_avg:.1f}% capacity",
-                                    ),
-                                ]
-                            ),
-                        ],
-                        className="insights-card",
-                    ),
-                    lg=4,
-                    className="mb-3",
-                ),
-                dbc.Col(
-                    [
-                        dbc.Card(
-                            dbc.CardBody(dcc.Graph(figure=create_daily_average(), config={"displayModeBar": False})),
-                            className="chart-card",
-                        ),
-                        dbc.Card(
-                            dbc.CardBody(dcc.Graph(figure=create_histogram(), config={"displayModeBar": False})),
-                            className="chart-card",
-                        ),
-                    ],
-                    lg=8,
-                ),
-            ],
-            className="mb-2",
-        ),
-        dbc.Row(
-            [
-                dbc.Col(
-                    dbc.Card(
-                        dbc.CardBody(dcc.Graph(figure=create_hourly_average(), config={"displayModeBar": False})),
-                        className="chart-card",
-                    ),
-                    lg=6,
-                ),
-                dbc.Col(
-                    dbc.Card(
-                        dbc.CardBody(dcc.Graph(figure=create_heatmap(), config={"displayModeBar": False})),
-                        className="chart-card",
-                    ),
-                    lg=6,
-                ),
-            ],
-        ),
-        html.Hr(className="my-4"),
-        html.P(
-            [
-                "Data sourced from on-campus occupancy sensors via the Density API. ",
-                "Readings are collected every 30 minutes during gym operating hours ",
-                "(Mon–Fri 7 AM–11 PM, Sat 8 AM–6 PM, Sun 8 AM–11 PM PST). ",
-                "Values represent estimated percentage of maximum capacity (150 people).",
-            ],
-            className="footer-text text-center mb-4",
-        ),
-    ],
-    fluid=True,
-    className="pb-4",
-    style={"maxWidth": "1400px"},
-)
+app.layout = create_layout
 
 
 if __name__ == "__main__":
