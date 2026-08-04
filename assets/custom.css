@@ -34,6 +34,28 @@ body {
     margin-bottom: 0;
 }
 
+.hero-season-note {
+    margin-top: 0.75rem;
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+.summer-filter-bar {
+    background: #ffffff;
+    border-radius: 0.75rem;
+    padding: 1rem 1.25rem;
+}
+
+.summer-filter-checkbox {
+    font-weight: 600;
+    color: var(--berkeley-blue);
+}
+
+.summer-filter-help {
+    font-size: 0.85rem;
+    margin-top: 0.35rem;
+}
+
 .kpi-card {
     border: none;
     border-radius: 0.75rem;

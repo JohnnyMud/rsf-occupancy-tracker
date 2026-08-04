@@ -28,6 +28,8 @@ DAY_ORDER = [
 ]
 # Hour buckets that appear on at least one operating day.
 OPERATING_HOUR_BUCKETS = list(range(7, 23))
+# Summer months are not representative of school-year occupancy.
+SUMMER_MONTHS = (5, 6, 7, 8)
 
 
 def load_raw_sheet_data(
@@ -168,6 +170,23 @@ def apply_inclusive_date_bounds(
         end_ts = pd.Timestamp(datetime.combine(end, time.max), tz=LOCAL_TIMEZONE)
         mask &= timestamps <= end_ts
     return mask
+
+
+def filter_summer_months(
+    data: pd.DataFrame,
+    exclude: bool = True,
+) -> pd.DataFrame:
+    """
+    Optionally drop May–August readings.
+
+    Summer occupancy is usually not representative of the school year, so the
+    dashboard excludes these months by default.
+    """
+    if data is None or data.empty or not exclude:
+        return data.copy() if data is not None else pd.DataFrame()
+    if "pst_timestamp" not in data.columns:
+        raise ValueError("Occupancy data requires pst_timestamp to filter summer months")
+    return data[~data["pst_timestamp"].dt.month.isin(SUMMER_MONTHS)].copy()
 
 
 def prepare_occupancy_data(

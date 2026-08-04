@@ -78,6 +78,28 @@ def test_build_heatmap_pivot_masks_closed_and_missing_slots():
     assert pd.isna(pivot.loc["Monday", "8 AM"])
 
 
+def test_filter_summer_months_excludes_may_through_august_by_default():
+    prepared = fetch.prepare_occupancy_data(
+        pd.DataFrame(
+            {
+                "timestamp": [
+                    "2025-04-01 15:00:00",  # April, keep
+                    "2025-05-01 15:00:00",  # May, drop
+                    "2025-07-01 15:00:00",  # July, drop
+                    "2025-09-02 15:00:00",  # September, keep
+                ],
+                "percentage_capacity": ["10.00", "20.00", "30.00", "40.00"],
+            }
+        )
+    )
+
+    school_year = fetch.filter_summer_months(prepared, exclude=True)
+    with_summer = fetch.filter_summer_months(prepared, exclude=False)
+
+    assert school_year["percentage_capacity"].tolist() == [10.0, 40.0]
+    assert with_summer["percentage_capacity"].tolist() == [10.0, 20.0, 30.0, 40.0]
+
+
 def test_try_load_occupancy_data_returns_error_instead_of_raising(monkeypatch):
     def boom(*args, **kwargs):
         raise RuntimeError("sheet unavailable")

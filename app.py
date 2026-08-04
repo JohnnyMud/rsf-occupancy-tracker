@@ -1,7 +1,7 @@
 import dash_bootstrap_components as dbc
 import pandas as pd
 import plotly.express as px
-from dash import Dash, dcc, html
+from dash import Dash, Input, Output, callback, dcc, html
 
 import analytics
 import data_fetch as fetch
@@ -19,6 +19,7 @@ CHART_LAYOUT = dict(
 )
 
 COLOR_SCALE = "RdYlGn_r"
+_OCCUPANCY_DATA: pd.DataFrame | None = None
 
 
 def format_hour(hour: int) -> str:
@@ -168,6 +169,25 @@ def navbar():
     )
 
 
+def summer_filter_controls():
+    return html.Div(
+        [
+            dbc.Checkbox(
+                id="exclude-summer",
+                label="Exclude summer months (May–August)",
+                value=True,
+                className="summer-filter-checkbox",
+            ),
+            html.P(
+                "Summer occupancy is usually lighter and less representative of "
+                "the school year, so it is hidden by default.",
+                className="summer-filter-help text-muted mb-0",
+            ),
+        ],
+        className="summer-filter-bar mb-3",
+    )
+
+
 def _avg_with_sample(avg: float | None, count: int) -> str:
     if avg is None:
         return "Insufficient data"
@@ -215,7 +235,18 @@ def build_unavailable_layout(error_message: str):
     )
 
 
-def build_dashboard_layout(df: pd.DataFrame):
+def build_empty_filter_content(exclude_summer: bool):
+    if exclude_summer:
+        message = (
+            "No school-year readings remain after excluding May–August. "
+            "Uncheck the summer filter to include those months."
+        )
+    else:
+        message = "No occupancy readings are available for the current filters."
+    return dbc.Alert(message, color="warning", className="unavailable-alert")
+
+
+def build_dashboard_content(df: pd.DataFrame, exclude_summer: bool):
     insights = analytics.compute_insights(df)
     pivot = fetch.build_heatmap_pivot(df)
     avg_capacity = insights.avg_capacity
@@ -224,208 +255,218 @@ def build_dashboard_layout(df: pd.DataFrame):
         if insights.missing_days
         else "All weekdays represented"
     )
+    season_note = (
+        "School-year readings only (May–August excluded)"
+        if exclude_summer
+        else "Including summer months (May–August)"
+    )
 
+    return [
+        html.Div(
+            [
+                html.H1("When should you hit the gym?"),
+                html.P(
+                    f"Occupancy trends from {insights.date_start} to "
+                    f"{insights.date_end} · "
+                    f"{insights.total_readings} readings during operating hours"
+                ),
+                html.P(season_note, className="hero-season-note mb-0"),
+            ],
+            className="hero-section",
+        ),
+        dbc.Row(
+            [
+                dbc.Col(
+                    kpi_card(
+                        "Overall Average",
+                        f"{avg_capacity:.1f}%",
+                        f"{analytics.sample_size_label(insights.total_readings)} · "
+                        f"{insights.date_start} – {insights.date_end}",
+                    ),
+                    lg=3,
+                    md=6,
+                    className="mb-3",
+                ),
+                dbc.Col(
+                    kpi_card(
+                        "Quietest Day",
+                        insights.least_busy_day[:3] if insights.least_busy_day else "—",
+                        _avg_with_sample(
+                            insights.least_busy_day_avg,
+                            insights.least_busy_day_n,
+                        ),
+                    ),
+                    lg=3,
+                    md=6,
+                    className="mb-3",
+                ),
+                dbc.Col(
+                    kpi_card(
+                        "Busiest Day",
+                        insights.most_busy_day[:3] if insights.most_busy_day else "—",
+                        _avg_with_sample(
+                            insights.most_busy_day_avg,
+                            insights.most_busy_day_n,
+                        ),
+                    ),
+                    lg=3,
+                    md=6,
+                    className="mb-3",
+                ),
+                dbc.Col(
+                    kpi_card(
+                        "Peak Hours",
+                        insights.peak_period_label,
+                        _avg_with_sample(
+                            insights.peak_period_avg,
+                            insights.peak_period_n,
+                        ),
+                    ),
+                    lg=3,
+                    md=6,
+                    className="mb-3",
+                ),
+            ],
+            className="mb-2",
+        ),
+        html.P("Occupancy Trends", className="section-title mt-4"),
+        dbc.Row(
+            [
+                dbc.Col(
+                    dbc.Card(
+                        [
+                            dbc.CardHeader("Best Times to Visit"),
+                            dbc.CardBody(
+                                [
+                                    insight_block(
+                                        "Least Busy Day",
+                                        insights.least_busy_day or "Insufficient data",
+                                        _avg_with_sample(
+                                            insights.least_busy_day_avg,
+                                            insights.least_busy_day_n,
+                                        ),
+                                    ),
+                                    insight_block(
+                                        "Least Busy Hour",
+                                        format_hour(insights.least_busy_hour)
+                                        if insights.least_busy_hour is not None
+                                        else "Insufficient data",
+                                        _avg_with_sample(
+                                            insights.least_busy_hour_avg,
+                                            insights.least_busy_hour_n,
+                                        ),
+                                    ),
+                                    insight_block(
+                                        "Peak Period",
+                                        insights.peak_period_label,
+                                        _avg_with_sample(
+                                            insights.peak_period_avg,
+                                            insights.peak_period_n,
+                                        ),
+                                    ),
+                                    insight_block(
+                                        "Most Busy Day",
+                                        insights.most_busy_day or "Insufficient data",
+                                        _avg_with_sample(
+                                            insights.most_busy_day_avg,
+                                            insights.most_busy_day_n,
+                                        ),
+                                    ),
+                                    html.P(
+                                        missing_days_text,
+                                        className="text-muted mb-0 mt-3",
+                                        style={"fontSize": "0.8rem"},
+                                    ),
+                                ]
+                            ),
+                        ],
+                        className="insights-card",
+                    ),
+                    lg=4,
+                    className="mb-3",
+                ),
+                dbc.Col(
+                    [
+                        dbc.Card(
+                            dbc.CardBody(
+                                dcc.Graph(
+                                    figure=create_daily_average(df, avg_capacity),
+                                    config={"displayModeBar": False},
+                                )
+                            ),
+                            className="chart-card",
+                        )
+                    ],
+                    lg=8,
+                ),
+            ],
+            className="mb-2",
+        ),
+        dbc.Row(
+            [
+                dbc.Col(
+                    dbc.Card(
+                        dbc.CardBody(
+                            dcc.Graph(
+                                figure=create_hourly_average(df),
+                                config={"displayModeBar": False},
+                            )
+                        ),
+                        className="chart-card",
+                    ),
+                    lg=4,
+                    className="mb-3",
+                ),
+                dbc.Col(
+                    dbc.Card(
+                        dbc.CardBody(
+                            dcc.Graph(
+                                figure=create_heatmap(pivot),
+                                config={"displayModeBar": False},
+                            )
+                        ),
+                        className="chart-card",
+                    ),
+                    lg=4,
+                    className="mb-3",
+                ),
+                dbc.Col(
+                    dbc.Card(
+                        dbc.CardBody(
+                            dcc.Graph(
+                                figure=create_histogram(df),
+                                config={"displayModeBar": False},
+                            )
+                        ),
+                        className="chart-card",
+                    ),
+                    lg=4,
+                    className="mb-3",
+                ),
+            ],
+        ),
+        html.Hr(className="my-4"),
+        html.P(
+            [
+                "Data sourced from on-campus occupancy sensors via the Density API. ",
+                "Readings are collected every 30 minutes during gym operating hours ",
+                "(Mon–Fri 7 AM–11 PM, Sat 8 AM–6 PM, Sun 8 AM–11 PM PST). ",
+                "Values represent estimated percentage of maximum capacity (150 people). ",
+                f"Analysis window: {insights.date_start} – {insights.date_end} "
+                f"({analytics.sample_size_label(insights.total_readings)}). ",
+                f"{season_note}.",
+            ],
+            className="footer-text text-center mb-4",
+        ),
+    ]
+
+
+def build_dashboard_layout():
     return dbc.Container(
         [
             navbar(),
-            html.Div(
-                [
-                    html.H1("When should you hit the gym?"),
-                    html.P(
-                        f"Occupancy trends from {insights.date_start} to "
-                        f"{insights.date_end} · "
-                        f"{insights.total_readings} readings during operating hours"
-                    ),
-                ],
-                className="hero-section",
-            ),
-            dbc.Row(
-                [
-                    dbc.Col(
-                        kpi_card(
-                            "Overall Average",
-                            f"{avg_capacity:.1f}%",
-                            f"{analytics.sample_size_label(insights.total_readings)} · "
-                            f"{insights.date_start} – {insights.date_end}",
-                        ),
-                        lg=3,
-                        md=6,
-                        className="mb-3",
-                    ),
-                    dbc.Col(
-                        kpi_card(
-                            "Quietest Day",
-                            insights.least_busy_day[:3]
-                            if insights.least_busy_day
-                            else "—",
-                            _avg_with_sample(
-                                insights.least_busy_day_avg,
-                                insights.least_busy_day_n,
-                            ),
-                        ),
-                        lg=3,
-                        md=6,
-                        className="mb-3",
-                    ),
-                    dbc.Col(
-                        kpi_card(
-                            "Busiest Day",
-                            insights.most_busy_day[:3]
-                            if insights.most_busy_day
-                            else "—",
-                            _avg_with_sample(
-                                insights.most_busy_day_avg,
-                                insights.most_busy_day_n,
-                            ),
-                        ),
-                        lg=3,
-                        md=6,
-                        className="mb-3",
-                    ),
-                    dbc.Col(
-                        kpi_card(
-                            "Peak Hours",
-                            insights.peak_period_label,
-                            _avg_with_sample(
-                                insights.peak_period_avg,
-                                insights.peak_period_n,
-                            ),
-                        ),
-                        lg=3,
-                        md=6,
-                        className="mb-3",
-                    ),
-                ],
-                className="mb-2",
-            ),
-            html.P("Occupancy Trends", className="section-title mt-4"),
-            dbc.Row(
-                [
-                    dbc.Col(
-                        dbc.Card(
-                            [
-                                dbc.CardHeader("Best Times to Visit"),
-                                dbc.CardBody(
-                                    [
-                                        insight_block(
-                                            "Least Busy Day",
-                                            insights.least_busy_day or "Insufficient data",
-                                            _avg_with_sample(
-                                                insights.least_busy_day_avg,
-                                                insights.least_busy_day_n,
-                                            ),
-                                        ),
-                                        insight_block(
-                                            "Least Busy Hour",
-                                            format_hour(insights.least_busy_hour)
-                                            if insights.least_busy_hour is not None
-                                            else "Insufficient data",
-                                            _avg_with_sample(
-                                                insights.least_busy_hour_avg,
-                                                insights.least_busy_hour_n,
-                                            ),
-                                        ),
-                                        insight_block(
-                                            "Peak Period",
-                                            insights.peak_period_label,
-                                            _avg_with_sample(
-                                                insights.peak_period_avg,
-                                                insights.peak_period_n,
-                                            ),
-                                        ),
-                                        insight_block(
-                                            "Most Busy Day",
-                                            insights.most_busy_day or "Insufficient data",
-                                            _avg_with_sample(
-                                                insights.most_busy_day_avg,
-                                                insights.most_busy_day_n,
-                                            ),
-                                        ),
-                                        html.P(
-                                            missing_days_text,
-                                            className="text-muted mb-0 mt-3",
-                                            style={"fontSize": "0.8rem"},
-                                        ),
-                                    ]
-                                ),
-                            ],
-                            className="insights-card",
-                        ),
-                        lg=4,
-                        className="mb-3",
-                    ),
-                    dbc.Col(
-                        [
-                            dbc.Card(
-                                dbc.CardBody(
-                                    dcc.Graph(
-                                        figure=create_daily_average(df, avg_capacity),
-                                        config={"displayModeBar": False},
-                                    )
-                                ),
-                                className="chart-card",
-                            )
-                        ],
-                        lg=8,
-                    ),
-                ],
-                className="mb-2",
-            ),
-            dbc.Row(
-                [
-                    dbc.Col(
-                        dbc.Card(
-                            dbc.CardBody(
-                                dcc.Graph(
-                                    figure=create_hourly_average(df),
-                                    config={"displayModeBar": False},
-                                )
-                            ),
-                            className="chart-card",
-                        ),
-                        lg=4,
-                        className="mb-3",
-                    ),
-                    dbc.Col(
-                        dbc.Card(
-                            dbc.CardBody(
-                                dcc.Graph(
-                                    figure=create_heatmap(pivot),
-                                    config={"displayModeBar": False},
-                                )
-                            ),
-                            className="chart-card",
-                        ),
-                        lg=4,
-                        className="mb-3",
-                    ),
-                    dbc.Col(
-                        dbc.Card(
-                            dbc.CardBody(
-                                dcc.Graph(
-                                    figure=create_histogram(df),
-                                    config={"displayModeBar": False},
-                                )
-                            ),
-                            className="chart-card",
-                        ),
-                        lg=4,
-                        className="mb-3",
-                    ),
-                ],
-            ),
-            html.Hr(className="my-4"),
-            html.P(
-                [
-                    "Data sourced from on-campus occupancy sensors via the Density API. ",
-                    "Readings are collected every 30 minutes during gym operating hours ",
-                    "(Mon–Fri 7 AM–11 PM, Sat 8 AM–6 PM, Sun 8 AM–11 PM PST). ",
-                    "Values represent estimated percentage of maximum capacity (150 people). ",
-                    f"Analysis window: {insights.date_start} – {insights.date_end} "
-                    f"({analytics.sample_size_label(insights.total_readings)}).",
-                ],
-                className="footer-text text-center mb-4",
-            ),
+            summer_filter_controls(),
+            html.Div(id="dashboard-content"),
         ],
         fluid=True,
         className="pb-4",
@@ -434,13 +475,15 @@ def build_dashboard_layout(df: pd.DataFrame):
 
 
 def create_layout():
+    global _OCCUPANCY_DATA
+
     data, error_message = fetch.try_load_occupancy_data()
     if data is None:
+        _OCCUPANCY_DATA = None
         return build_unavailable_layout(error_message or "Unknown error")
-    try:
-        return build_dashboard_layout(data)
-    except Exception as exc:
-        return build_unavailable_layout(str(exc))
+
+    _OCCUPANCY_DATA = data
+    return build_dashboard_layout()
 
 
 app = Dash(
@@ -453,6 +496,29 @@ app = Dash(
 )
 server = app.server
 app.layout = create_layout
+
+
+@callback(
+    Output("dashboard-content", "children"),
+    Input("exclude-summer", "value"),
+)
+def update_dashboard_content(exclude_summer: bool | None):
+    if _OCCUPANCY_DATA is None:
+        return build_empty_filter_content(bool(exclude_summer))
+
+    exclude = bool(exclude_summer)
+    filtered = fetch.filter_summer_months(_OCCUPANCY_DATA, exclude=exclude)
+    if filtered.empty:
+        return build_empty_filter_content(exclude)
+
+    try:
+        return build_dashboard_content(filtered, exclude_summer=exclude)
+    except Exception as exc:
+        return dbc.Alert(
+            f"Unable to update dashboard: {exc}",
+            color="warning",
+            className="unavailable-alert",
+        )
 
 
 if __name__ == "__main__":
