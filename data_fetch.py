@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import logging
+from datetime import date, datetime, time
 
 import numpy as np
 import pandas as pd
@@ -23,6 +26,8 @@ DAY_ORDER = [
     "Saturday",
     "Sunday",
 ]
+# Hour buckets that appear on at least one operating day.
+OPERATING_HOUR_BUCKETS = list(range(7, 23))
 
 
 def load_raw_sheet_data(
@@ -80,6 +85,7 @@ def parse_timestamps(df: pd.DataFrame) -> pd.Series:
 
 
 def parse_percentage_capacity(df: pd.DataFrame) -> pd.Series:
+    """Parse occupancy percentages without rounding or clipping."""
     if "percentage_capacity" in df:
         percentages = pd.to_numeric(df["percentage_capacity"], errors="coerce")
     else:
@@ -103,7 +109,72 @@ def format_hour_label(hour: int) -> str:
     return f"{hour - 12} PM"
 
 
-def prepare_occupancy_data(raw_df: pd.DataFrame) -> pd.DataFrame:
+def _as_local_date(value: date | datetime | str | pd.Timestamp | None) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    timestamp = pd.Timestamp(value)
+    if pd.isna(timestamp):
+        raise ValueError(f"Invalid date boundary: {value!r}")
+    return timestamp.date()
+
+
+def is_open_hour(weekday_name: str, hour: int) -> bool:
+    weekday_index = DAY_ORDER.index(weekday_name)
+    opens_at, closes_at = rsf.OPERATING_HOURS[weekday_index]
+    return opens_at.hour <= hour < closes_at.hour
+
+
+def during_operating_hours(timestamps: pd.Series) -> pd.Series:
+    """Return a boolean mask for RSF operating hours by weekday."""
+    if timestamps.empty:
+        return pd.Series(dtype=bool)
+
+    weekday = timestamps.dt.weekday
+    local_time = timestamps.dt.time
+    mask = pd.Series(False, index=timestamps.index)
+
+    for weekday_index, (opens_at, closes_at) in rsf.OPERATING_HOURS.items():
+        on_day = weekday == weekday_index
+        mask = mask | (on_day & (local_time >= opens_at) & (local_time < closes_at))
+    return mask
+
+
+def apply_inclusive_date_bounds(
+    timestamps: pd.Series,
+    start_date: date | datetime | str | pd.Timestamp | None = None,
+    end_date: date | datetime | str | pd.Timestamp | None = None,
+) -> pd.Series:
+    """
+    Inclusive local-calendar-day filter.
+
+    start_date and end_date keep every timestamp on those days
+    (00:00:00 through 23:59:59.999999 local time).
+    """
+    mask = pd.Series(True, index=timestamps.index)
+    start = _as_local_date(start_date)
+    end = _as_local_date(end_date)
+
+    if start is not None and end is not None and start > end:
+        raise ValueError("start_date must be on or before end_date")
+
+    if start is not None:
+        start_ts = pd.Timestamp(datetime.combine(start, time.min), tz=LOCAL_TIMEZONE)
+        mask &= timestamps >= start_ts
+    if end is not None:
+        end_ts = pd.Timestamp(datetime.combine(end, time.max), tz=LOCAL_TIMEZONE)
+        mask &= timestamps <= end_ts
+    return mask
+
+
+def prepare_occupancy_data(
+    raw_df: pd.DataFrame,
+    start_date: date | datetime | str | pd.Timestamp | None = None,
+    end_date: date | datetime | str | pd.Timestamp | None = None,
+) -> pd.DataFrame:
     """Validate and transform raw sheet rows into analysis-ready occupancy data."""
     if raw_df is None or raw_df.empty:
         raise ValueError("Occupancy data is empty")
@@ -113,15 +184,11 @@ def prepare_occupancy_data(raw_df: pd.DataFrame) -> pd.DataFrame:
     df["percentage_capacity"] = parse_percentage_capacity(df)
     df = df.dropna(subset=["pst_timestamp", "percentage_capacity"])
 
-    spring_break_end = pd.Timestamp("2025-03-31", tz=LOCAL_TIMEZONE)
-    end_of_semester = pd.Timestamp("2025-05-05", tz=LOCAL_TIMEZONE)
-    df = df[
-        (df["pst_timestamp"] >= spring_break_end)
-        & (df["pst_timestamp"] < end_of_semester)
-    ]
-    df = df[
-        (df["pst_timestamp"].dt.hour >= 7) & (df["pst_timestamp"].dt.hour < 23)
-    ]
+    if df.empty:
+        raise ValueError("No valid occupancy timestamps or capacity values found")
+
+    df = df[apply_inclusive_date_bounds(df["pst_timestamp"], start_date, end_date)]
+    df = df[during_operating_hours(df["pst_timestamp"])]
 
     if df.empty:
         raise ValueError("No occupancy readings remain after filtering")
@@ -141,7 +208,7 @@ def prepare_occupancy_data(raw_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_heatmap_pivot(data: pd.DataFrame) -> pd.DataFrame:
-    """Build the day/hour occupancy pivot used by the heatmap chart."""
+    """Build a day/hour pivot with closed hours and missing slots as NaN."""
     if data.empty:
         raise ValueError("Cannot build a heatmap pivot from empty occupancy data")
 
@@ -151,10 +218,13 @@ def build_heatmap_pivot(data: pd.DataFrame) -> pd.DataFrame:
         values="percentage_capacity",
         aggfunc="mean",
     )
-    pivot_table = pivot_table.reindex(DAY_ORDER)
-    null_hrs = [hour for hour in pivot_table.columns if hour >= 18]
-    if "Saturday" in pivot_table.index and null_hrs:
-        pivot_table.loc["Saturday", null_hrs] = np.nan
+    pivot_table = pivot_table.reindex(index=DAY_ORDER, columns=OPERATING_HOUR_BUCKETS)
+
+    for weekday_name in DAY_ORDER:
+        for hour in OPERATING_HOUR_BUCKETS:
+            if not is_open_hour(weekday_name, hour):
+                pivot_table.loc[weekday_name, hour] = np.nan
+
     pivot_table.columns = [format_hour_label(int(hour)) for hour in pivot_table.columns]
     return pivot_table
 
@@ -162,19 +232,31 @@ def build_heatmap_pivot(data: pd.DataFrame) -> pd.DataFrame:
 def load_occupancy_data(
     spreadsheet_name: str | None = None,
     credentials_path: str | None = None,
+    start_date: date | datetime | str | pd.Timestamp | None = None,
+    end_date: date | datetime | str | pd.Timestamp | None = None,
 ) -> pd.DataFrame:
     """Load sheet data and return a validated analysis DataFrame."""
     raw_df = load_raw_sheet_data(spreadsheet_name, credentials_path)
-    return prepare_occupancy_data(raw_df)
+    return prepare_occupancy_data(raw_df, start_date=start_date, end_date=end_date)
 
 
 def try_load_occupancy_data(
     spreadsheet_name: str | None = None,
     credentials_path: str | None = None,
+    start_date: date | datetime | str | pd.Timestamp | None = None,
+    end_date: date | datetime | str | pd.Timestamp | None = None,
 ) -> tuple[pd.DataFrame | None, str | None]:
     """Load occupancy data, returning (data, error_message)."""
     try:
-        return load_occupancy_data(spreadsheet_name, credentials_path), None
+        return (
+            load_occupancy_data(
+                spreadsheet_name,
+                credentials_path,
+                start_date=start_date,
+                end_date=end_date,
+            ),
+            None,
+        )
     except Exception as exc:
         LOGGER.exception("Failed to load occupancy data")
         return None, str(exc)

@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 from dash import Dash, dcc, html
 
+import analytics
 import data_fetch as fetch
 
 DAY_ORDER = fetch.DAY_ORDER
@@ -27,31 +28,6 @@ def format_hour(hour: int) -> str:
 def apply_chart_style(fig, height=380):
     fig.update_layout(**CHART_LAYOUT, height=height)
     return fig
-
-
-def compute_insights(df: pd.DataFrame) -> dict:
-    avg_capacity = float(df["percentage_capacity"].mean())
-    weekday_avgs = (
-        df.groupby("weekday")["percentage_capacity"].mean().reindex(DAY_ORDER).dropna()
-    )
-    hourly_avgs = df.groupby("hour")["percentage_capacity"].mean().sort_values()
-    peak_hours_avg = float(
-        df[df["hour"].isin([16, 17, 18])]["percentage_capacity"].mean()
-    )
-
-    return {
-        "avg_capacity": avg_capacity,
-        "least_busy_day": weekday_avgs.idxmin(),
-        "least_busy_day_avg": float(weekday_avgs.min()),
-        "most_busy_day": weekday_avgs.idxmax(),
-        "most_busy_day_avg": float(weekday_avgs.max()),
-        "least_busy_hour": int(hourly_avgs.idxmin()),
-        "least_busy_hour_avg": float(hourly_avgs.min()),
-        "peak_hours_avg": peak_hours_avg,
-        "date_start": df["pst_timestamp"].min().strftime("%b %d, %Y"),
-        "date_end": df["pst_timestamp"].max().strftime("%b %d, %Y"),
-        "total_readings": len(df),
-    }
 
 
 def create_heatmap(pivot: pd.DataFrame):
@@ -97,7 +73,12 @@ def create_daily_average(df: pd.DataFrame, avg_capacity: float):
 
 
 def create_hourly_average(df: pd.DataFrame):
-    hourly_avg = df.groupby("hour")["percentage_capacity"].mean().reset_index()
+    hourly_avg = (
+        df.groupby("hour")["percentage_capacity"]
+        .mean()
+        .reindex(fetch.OPERATING_HOUR_BUCKETS)
+        .reset_index()
+    )
     hourly_avg["hour_label"] = hourly_avg["hour"].apply(format_hour)
     fig = px.line(
         hourly_avg,
@@ -139,7 +120,11 @@ def kpi_card(label, value, subtitle):
             [
                 html.P(label, className="kpi-label mb-1"),
                 html.P(value, className="kpi-value mb-1"),
-                html.P(subtitle, className="text-muted mb-0", style={"fontSize": "0.8rem"}),
+                html.P(
+                    subtitle,
+                    className="text-muted mb-0",
+                    style={"fontSize": "0.8rem"},
+                ),
             ]
         ),
         className="kpi-card",
@@ -183,6 +168,12 @@ def navbar():
     )
 
 
+def _avg_with_sample(avg: float | None, count: int) -> str:
+    if avg is None:
+        return "Insufficient data"
+    return f"Average {avg:.1f}% capacity · {analytics.sample_size_label(count)}"
+
+
 def build_unavailable_layout(error_message: str):
     return dbc.Container(
         [
@@ -199,7 +190,10 @@ def build_unavailable_layout(error_message: str):
             ),
             dbc.Alert(
                 [
-                    html.P("Unable to load occupancy data.", className="mb-1 fw-semibold"),
+                    html.P(
+                        "Unable to load occupancy data.",
+                        className="mb-1 fw-semibold",
+                    ),
                     html.P(error_message or "Unknown error", className="mb-0"),
                 ],
                 color="warning",
@@ -222,9 +216,14 @@ def build_unavailable_layout(error_message: str):
 
 
 def build_dashboard_layout(df: pd.DataFrame):
-    insights = compute_insights(df)
+    insights = analytics.compute_insights(df)
     pivot = fetch.build_heatmap_pivot(df)
-    avg_capacity = insights["avg_capacity"]
+    avg_capacity = insights.avg_capacity
+    missing_days_text = (
+        f"Missing days: {', '.join(insights.missing_days)}"
+        if insights.missing_days
+        else "All weekdays represented"
+    )
 
     return dbc.Container(
         [
@@ -233,9 +232,9 @@ def build_dashboard_layout(df: pd.DataFrame):
                 [
                     html.H1("When should you hit the gym?"),
                     html.P(
-                        f"Occupancy trends from {insights['date_start']} to "
-                        f"{insights['date_end']} · "
-                        f"{insights['total_readings']} readings collected every 30 minutes"
+                        f"Occupancy trends from {insights.date_start} to "
+                        f"{insights.date_end} · "
+                        f"{insights.total_readings} readings during operating hours"
                     ),
                 ],
                 className="hero-section",
@@ -246,7 +245,8 @@ def build_dashboard_layout(df: pd.DataFrame):
                         kpi_card(
                             "Overall Average",
                             f"{avg_capacity:.1f}%",
-                            "Across all operating hours",
+                            f"{analytics.sample_size_label(insights.total_readings)} · "
+                            f"{insights.date_start} – {insights.date_end}",
                         ),
                         lg=3,
                         md=6,
@@ -255,8 +255,13 @@ def build_dashboard_layout(df: pd.DataFrame):
                     dbc.Col(
                         kpi_card(
                             "Quietest Day",
-                            insights["least_busy_day"][:3],
-                            f"Avg. {insights['least_busy_day_avg']:.1f}% capacity",
+                            insights.least_busy_day[:3]
+                            if insights.least_busy_day
+                            else "—",
+                            _avg_with_sample(
+                                insights.least_busy_day_avg,
+                                insights.least_busy_day_n,
+                            ),
                         ),
                         lg=3,
                         md=6,
@@ -265,8 +270,13 @@ def build_dashboard_layout(df: pd.DataFrame):
                     dbc.Col(
                         kpi_card(
                             "Busiest Day",
-                            insights["most_busy_day"][:3],
-                            f"Avg. {insights['most_busy_day_avg']:.1f}% capacity",
+                            insights.most_busy_day[:3]
+                            if insights.most_busy_day
+                            else "—",
+                            _avg_with_sample(
+                                insights.most_busy_day_avg,
+                                insights.most_busy_day_n,
+                            ),
                         ),
                         lg=3,
                         md=6,
@@ -275,8 +285,11 @@ def build_dashboard_layout(df: pd.DataFrame):
                     dbc.Col(
                         kpi_card(
                             "Peak Hours",
-                            "4–6 PM",
-                            f"Avg. {insights['peak_hours_avg']:.1f}% capacity",
+                            insights.peak_period_label,
+                            _avg_with_sample(
+                                insights.peak_period_avg,
+                                insights.peak_period_n,
+                            ),
                         ),
                         lg=3,
                         md=6,
@@ -296,23 +309,42 @@ def build_dashboard_layout(df: pd.DataFrame):
                                     [
                                         insight_block(
                                             "Least Busy Day",
-                                            insights["least_busy_day"],
-                                            f"Average {insights['least_busy_day_avg']:.1f}% capacity",
+                                            insights.least_busy_day or "Insufficient data",
+                                            _avg_with_sample(
+                                                insights.least_busy_day_avg,
+                                                insights.least_busy_day_n,
+                                            ),
                                         ),
                                         insight_block(
                                             "Least Busy Hour",
-                                            format_hour(insights["least_busy_hour"]),
-                                            f"Average {insights['least_busy_hour_avg']:.1f}% capacity",
+                                            format_hour(insights.least_busy_hour)
+                                            if insights.least_busy_hour is not None
+                                            else "Insufficient data",
+                                            _avg_with_sample(
+                                                insights.least_busy_hour_avg,
+                                                insights.least_busy_hour_n,
+                                            ),
                                         ),
                                         insight_block(
                                             "Peak Period",
-                                            "4:00 – 6:00 PM",
-                                            f"Average {insights['peak_hours_avg']:.1f}% capacity",
+                                            insights.peak_period_label,
+                                            _avg_with_sample(
+                                                insights.peak_period_avg,
+                                                insights.peak_period_n,
+                                            ),
                                         ),
                                         insight_block(
                                             "Most Busy Day",
-                                            insights["most_busy_day"],
-                                            f"Average {insights['most_busy_day_avg']:.1f}% capacity",
+                                            insights.most_busy_day or "Insufficient data",
+                                            _avg_with_sample(
+                                                insights.most_busy_day_avg,
+                                                insights.most_busy_day_n,
+                                            ),
+                                        ),
+                                        html.P(
+                                            missing_days_text,
+                                            className="text-muted mb-0 mt-3",
+                                            style={"fontSize": "0.8rem"},
                                         ),
                                     ]
                                 ),
@@ -388,7 +420,9 @@ def build_dashboard_layout(df: pd.DataFrame):
                     "Data sourced from on-campus occupancy sensors via the Density API. ",
                     "Readings are collected every 30 minutes during gym operating hours ",
                     "(Mon–Fri 7 AM–11 PM, Sat 8 AM–6 PM, Sun 8 AM–11 PM PST). ",
-                    "Values represent estimated percentage of maximum capacity (150 people).",
+                    "Values represent estimated percentage of maximum capacity (150 people). ",
+                    f"Analysis window: {insights.date_start} – {insights.date_end} "
+                    f"({analytics.sample_size_label(insights.total_readings)}).",
                 ],
                 className="footer-text text-center mb-4",
             ),
@@ -403,7 +437,10 @@ def create_layout():
     data, error_message = fetch.try_load_occupancy_data()
     if data is None:
         return build_unavailable_layout(error_message or "Unknown error")
-    return build_dashboard_layout(data)
+    try:
+        return build_dashboard_layout(data)
+    except Exception as exc:
+        return build_unavailable_layout(str(exc))
 
 
 app = Dash(
