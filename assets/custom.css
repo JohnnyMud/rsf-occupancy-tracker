@@ -140,7 +140,17 @@ body {
     font-size: 1.1rem;
     font-weight: 600;
     color: var(--berkeley-blue);
+    margin-bottom: 0.35rem;
+}
+
+.section-subtitle {
+    font-size: 0.9rem;
+    color: var(--text-muted);
     margin-bottom: 1rem;
+}
+
+.featured-chart-card {
+    border: 1px solid rgba(0, 50, 98, 0.08);
 }
 
 .unavailable-alert {

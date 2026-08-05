@@ -39,12 +39,18 @@ def create_heatmap(pivot: pd.DataFrame):
         color_continuous_scale=COLOR_SCALE,
         aspect="auto",
     )
+    fig.update_traces(
+        hovertemplate=(
+            "Day: %{y}<br>Hour: %{x}<br>Occupancy: %{z:.1f}%<extra></extra>"
+        )
+    )
     fig.update_layout(
         title="Average Occupancy by Day & Hour",
         xaxis_title="Hour of Day",
         yaxis_title="",
+        coloraxis_colorbar=dict(title="Occupancy %", tickformat=".0f"),
     )
-    return apply_chart_style(fig, height=420)
+    return apply_chart_style(fig, height=560)
 
 
 def create_daily_average(df: pd.DataFrame, avg_capacity: float):
@@ -62,7 +68,13 @@ def create_daily_average(df: pd.DataFrame, avg_capacity: float):
         color="percentage_capacity",
         color_continuous_scale=COLOR_SCALE,
     )
-    fig.update_layout(title="Average Occupancy by Day of Week")
+    fig.update_traces(
+        hovertemplate="Day: %{x}<br>Avg. occupancy: %{y:.1f}%<extra></extra>"
+    )
+    fig.update_layout(
+        title="Average Occupancy by Day of Week",
+        coloraxis_colorbar=dict(tickformat=".0f"),
+    )
     fig.add_hline(
         y=avg_capacity,
         line_dash="dash",
@@ -85,9 +97,13 @@ def create_hourly_average(df: pd.DataFrame):
         hourly_avg,
         x="hour",
         y="percentage_capacity",
+        custom_data=["hour_label"],
         labels={"percentage_capacity": "Avg. Occupancy %", "hour": "Hour"},
         markers=True,
         color_discrete_sequence=["#003262"],
+    )
+    fig.update_traces(
+        hovertemplate="Hour: %{customdata[0]}<br>Avg. occupancy: %{y:.1f}%<extra></extra>"
     )
     fig.update_layout(
         title="Average Occupancy by Hour of Day",
@@ -106,6 +122,9 @@ def create_histogram(df: pd.DataFrame):
         x="percentage_capacity",
         nbins=30,
         color_discrete_sequence=["#004d7a"],
+    )
+    fig.update_traces(
+        hovertemplate="Occupancy: %{x:.1f}%<br>Readings: %{y}<extra></extra>"
     )
     fig.update_layout(
         title="Distribution of Occupancy Readings",
@@ -329,7 +348,21 @@ def build_dashboard_content(df: pd.DataFrame, exclude_summer: bool):
             ],
             className="mb-2",
         ),
-        html.P("Occupancy Trends", className="section-title mt-4"),
+        html.P("When is the gym busiest?", className="section-title mt-4"),
+        html.P(
+            "Average occupancy across each day and hour — the fastest way to pick a quieter window.",
+            className="section-subtitle",
+        ),
+        dbc.Card(
+            dbc.CardBody(
+                dcc.Graph(
+                    figure=create_heatmap(pivot),
+                    config={"displayModeBar": False},
+                )
+            ),
+            className="chart-card featured-chart-card mb-4",
+        ),
+        html.P("More detail", className="section-title mt-2"),
         dbc.Row(
             [
                 dbc.Col(
@@ -386,18 +419,17 @@ def build_dashboard_content(df: pd.DataFrame, exclude_summer: bool):
                     className="mb-3",
                 ),
                 dbc.Col(
-                    [
-                        dbc.Card(
-                            dbc.CardBody(
-                                dcc.Graph(
-                                    figure=create_daily_average(df, avg_capacity),
-                                    config={"displayModeBar": False},
-                                )
-                            ),
-                            className="chart-card",
-                        )
-                    ],
+                    dbc.Card(
+                        dbc.CardBody(
+                            dcc.Graph(
+                                figure=create_daily_average(df, avg_capacity),
+                                config={"displayModeBar": False},
+                            )
+                        ),
+                        className="chart-card",
+                    ),
                     lg=8,
+                    className="mb-3",
                 ),
             ],
             className="mb-2",
@@ -414,20 +446,7 @@ def build_dashboard_content(df: pd.DataFrame, exclude_summer: bool):
                         ),
                         className="chart-card",
                     ),
-                    lg=4,
-                    className="mb-3",
-                ),
-                dbc.Col(
-                    dbc.Card(
-                        dbc.CardBody(
-                            dcc.Graph(
-                                figure=create_heatmap(pivot),
-                                config={"displayModeBar": False},
-                            )
-                        ),
-                        className="chart-card",
-                    ),
-                    lg=4,
+                    lg=6,
                     className="mb-3",
                 ),
                 dbc.Col(
@@ -440,7 +459,7 @@ def build_dashboard_content(df: pd.DataFrame, exclude_summer: bool):
                         ),
                         className="chart-card",
                     ),
-                    lg=4,
+                    lg=6,
                     className="mb-3",
                 ),
             ],
