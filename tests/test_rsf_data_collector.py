@@ -11,7 +11,7 @@ def make_settings(tmp_path: Path) -> collector.CollectorSettings:
         density_api_url="https://example.test/occupancy",
         density_api_key="secret",
         max_capacity=150,
-        spreadsheet_name="RSF_DATA",
+        spreadsheet_id=collector.DEFAULT_SPREADSHEET_ID,
         credentials_path=tmp_path / "credentials.json",
         request_timeout_seconds=5,
         force_collection=False,
@@ -88,7 +88,7 @@ def test_google_sheets_write_leaves_formula_column_alone(tmp_path, monkeypatch):
     monkeypatch.setattr(
         collector,
         "setup_google_sheets",
-        lambda spreadsheet_name, credentials_path: worksheet,
+        lambda spreadsheet_id, credentials_path: worksheet,
     )
     record = collector.OccupancyRecord(
         timestamp_utc=datetime(2026, 7, 27, 20, 4, tzinfo=timezone.utc),

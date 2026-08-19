@@ -33,11 +33,11 @@ SUMMER_MONTHS = (5, 6, 7, 8)
 
 
 def load_raw_sheet_data(
-    spreadsheet_name: str | None = None,
+    spreadsheet_id: str | None = None,
     credentials_path: str | None = None,
 ) -> pd.DataFrame:
     """Fetch the raw occupancy sheet. Performs network I/O."""
-    sheet = rsf.setup_google_sheets(spreadsheet_name, credentials_path)
+    sheet = rsf.setup_google_sheets(spreadsheet_id, credentials_path)
     values = sheet.get_all_values()
     if not values:
         raise ValueError("The occupancy Google Sheet is empty")
@@ -249,18 +249,18 @@ def build_heatmap_pivot(data: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_occupancy_data(
-    spreadsheet_name: str | None = None,
+    spreadsheet_id: str | None = None,
     credentials_path: str | None = None,
     start_date: date | datetime | str | pd.Timestamp | None = None,
     end_date: date | datetime | str | pd.Timestamp | None = None,
 ) -> pd.DataFrame:
     """Load sheet data and return a validated analysis DataFrame."""
-    raw_df = load_raw_sheet_data(spreadsheet_name, credentials_path)
+    raw_df = load_raw_sheet_data(spreadsheet_id, credentials_path)
     return prepare_occupancy_data(raw_df, start_date=start_date, end_date=end_date)
 
 
 def try_load_occupancy_data(
-    spreadsheet_name: str | None = None,
+    spreadsheet_id: str | None = None,
     credentials_path: str | None = None,
     start_date: date | datetime | str | pd.Timestamp | None = None,
     end_date: date | datetime | str | pd.Timestamp | None = None,
@@ -269,7 +269,7 @@ def try_load_occupancy_data(
     try:
         return (
             load_occupancy_data(
-                spreadsheet_name,
+                spreadsheet_id,
                 credentials_path,
                 start_date=start_date,
                 end_date=end_date,

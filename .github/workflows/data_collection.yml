@@ -38,5 +38,5 @@ jobs:
           DENSITY_API_KEY: ${{ secrets.DENSITY_API_KEY }}
           DENSITY_API_URL: ${{ secrets.DENSITY_API_URL }}
           MAX_CAPACITY: ${{ secrets.MAX_CAPACITY }}
-          SPREADSHEET_NAME: ${{ secrets.SPREADSHEET_NAME }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           FORCE_COLLECTION: ${{ github.event_name == 'workflow_dispatch' }}

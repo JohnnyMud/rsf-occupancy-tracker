@@ -18,10 +18,8 @@ LOGGER = logging.getLogger(__name__)
 LOCAL_TIMEZONE = ZoneInfo("America/Los_Angeles")
 STORAGE_HEADERS = ("timestamp", "percentage_capacity")
 PST_TIMESTAMP_HEADERS = ("pst_timestamp", "pst_capacity")
-GOOGLE_SCOPES = (
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive",
-)
+GOOGLE_SCOPES = ("https://www.googleapis.com/auth/spreadsheets",)
+DEFAULT_SPREADSHEET_ID = "194sTKgOQIdlblphQp_Hulc2BgAn1vTeozcVX_om-L1I"
 OPERATING_HOURS = {
     0: (time(7), time(23)),
     1: (time(7), time(23)),
@@ -42,7 +40,7 @@ class CollectorSettings:
     density_api_url: str
     density_api_key: str
     max_capacity: int
-    spreadsheet_name: str
+    spreadsheet_id: str
     credentials_path: Path
     request_timeout_seconds: float
     force_collection: bool
@@ -81,7 +79,9 @@ class CollectorSettings:
             density_api_url=density_api_url,
             density_api_key=density_api_key,
             max_capacity=max_capacity,
-            spreadsheet_name=(os.getenv("SPREADSHEET_NAME") or "RSF_DATA").strip(),
+            spreadsheet_id=(
+                os.getenv("SPREADSHEET_ID") or DEFAULT_SPREADSHEET_ID
+            ).strip(),
             credentials_path=Path(
                 os.getenv("GOOGLE_CREDENTIALS_PATH") or "credentials.json"
             ),
@@ -179,7 +179,7 @@ def fetch_occupancy_count(
 
 
 def setup_google_sheets(
-    spreadsheet_name: str | None = None,
+    spreadsheet_id: str | None = None,
     credentials_path: Path | str | None = None,
 ):
     resolved_credentials_path = Path(
@@ -196,8 +196,8 @@ def setup_google_sheets(
         scopes=GOOGLE_SCOPES,
     )
     client = gspread.authorize(credentials)
-    spreadsheet = client.open(
-        spreadsheet_name or os.getenv("SPREADSHEET_NAME", "RSF_DATA")
+    spreadsheet = client.open_by_key(
+        spreadsheet_id or os.getenv("SPREADSHEET_ID") or DEFAULT_SPREADSHEET_ID
     )
     return spreadsheet.sheet1
 
@@ -255,7 +255,7 @@ def save_to_google_sheets(
     settings: CollectorSettings,
 ) -> bool:
     worksheet = setup_google_sheets(
-        settings.spreadsheet_name,
+        settings.spreadsheet_id,
         settings.credentials_path,
     )
     headers = ensure_storage_headers(worksheet)
