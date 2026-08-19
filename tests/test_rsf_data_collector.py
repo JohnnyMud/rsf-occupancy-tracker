@@ -1,4 +1,3 @@
-import csv
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -14,7 +13,6 @@ def make_settings(tmp_path: Path) -> collector.CollectorSettings:
         max_capacity=150,
         spreadsheet_name="RSF_DATA",
         credentials_path=tmp_path / "credentials.json",
-        csv_path=tmp_path / "occupancy.csv",
         request_timeout_seconds=5,
         force_collection=False,
     )
@@ -65,31 +63,6 @@ def test_fetch_occupancy_count_validates_and_uses_timeout(tmp_path):
     count = collector.fetch_occupancy_count(make_settings(tmp_path), Session())
 
     assert count == 42
-
-
-def test_csv_storage_uses_existing_schema_and_skips_duplicate_slot(tmp_path):
-    settings = make_settings(tmp_path)
-    record = collector.OccupancyRecord(
-        timestamp_utc=datetime(2026, 7, 27, 20, 34, tzinfo=timezone.utc),
-        occupancy_count=42,
-        max_capacity=150,
-    )
-    duplicate_slot = collector.OccupancyRecord(
-        timestamp_utc=datetime(2026, 7, 27, 20, 48, tzinfo=timezone.utc),
-        occupancy_count=40,
-        max_capacity=150,
-    )
-
-    assert collector.save_to_csv(record, settings.csv_path) is True
-    assert collector.save_to_csv(duplicate_slot, settings.csv_path) is False
-
-    with settings.csv_path.open(newline="", encoding="utf-8") as csv_file:
-        rows = list(csv.DictReader(csv_file))
-
-    assert tuple(rows[0]) == collector.STORAGE_HEADERS
-    assert len(rows) == 1
-    assert rows[0]["timestamp"] == "2026-07-27 20:34:00"
-    assert rows[0]["percentage_capacity"] == "28.00"
 
 
 def test_google_sheets_write_leaves_formula_column_alone(tmp_path, monkeypatch):
