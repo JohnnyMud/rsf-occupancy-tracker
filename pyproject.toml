@@ -1,7 +1,7 @@
 [project]
 name = "rsf-occupancy-tracker"
 version = "0.1.0"
-description = "Add your description here"
+description = "Campus gym occupancy collector, analysis, and dashboard for UC Berkeley RSF"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
