@@ -5,7 +5,6 @@
 credentials.json
 
 # Data files
-rsf_gym_crowd_data.csv
 *.csv
 data/
 

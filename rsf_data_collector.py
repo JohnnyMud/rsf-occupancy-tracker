@@ -1,4 +1,3 @@
-import csv
 import logging
 import os
 from dataclasses import dataclass
@@ -45,7 +44,6 @@ class CollectorSettings:
     max_capacity: int
     spreadsheet_name: str
     credentials_path: Path
-    csv_path: Path
     request_timeout_seconds: float
     force_collection: bool
 
@@ -87,7 +85,6 @@ class CollectorSettings:
             credentials_path=Path(
                 os.getenv("GOOGLE_CREDENTIALS_PATH") or "credentials.json"
             ),
-            csv_path=Path(os.getenv("DATA_FILE") or "rsf_gym_crowd_data.csv"),
             request_timeout_seconds=timeout,
             force_collection=force_collection,
         )
@@ -277,34 +274,6 @@ def save_to_google_sheets(
     return True
 
 
-def save_to_csv(record: OccupancyRecord, csv_path: Path) -> bool:
-    values = record.as_mapping()
-    timestamp = str(values["timestamp"])
-
-    if csv_path.exists():
-        with csv_path.open(newline="", encoding="utf-8") as csv_file:
-            reader = csv.DictReader(csv_file)
-            if tuple(reader.fieldnames or ()) != STORAGE_HEADERS:
-                raise ValueError(
-                    f"{csv_path} must use the timestamp, percentage_capacity schema"
-                )
-            if is_duplicate_slot(
-                [row["timestamp"] for row in reader],
-                record.timestamp_utc,
-            ):
-                LOGGER.info("CSV already contains the half-hour slot for %s", timestamp)
-                return False
-
-    csv_path.parent.mkdir(parents=True, exist_ok=True)
-    write_header = not csv_path.exists()
-    with csv_path.open("a", newline="", encoding="utf-8") as csv_file:
-        writer = csv.DictWriter(csv_file, fieldnames=STORAGE_HEADERS)
-        if write_header:
-            writer.writeheader()
-        writer.writerow(values)
-    return True
-
-
 def collect(settings: CollectorSettings, now: datetime | None = None) -> OccupancyRecord | None:
     timestamp = current_utc_timestamp(now)
     if not settings.force_collection and not is_during_operating_hours(timestamp):
@@ -320,7 +289,6 @@ def collect(settings: CollectorSettings, now: datetime | None = None) -> Occupan
         occupancy_count=count,
         max_capacity=settings.max_capacity,
     )
-    save_to_csv(record, settings.csv_path)
     save_to_google_sheets(record, settings)
     LOGGER.info("Saved occupancy record for %s", record.as_mapping()["timestamp"])
     return record
