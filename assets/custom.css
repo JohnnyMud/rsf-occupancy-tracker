@@ -10,6 +10,10 @@ body {
     background-color: var(--surface);
 }
 
+.app-navbar {
+    background-color: var(--berkeley-blue) !important;
+}
+
 .navbar-brand-subtitle {
     font-size: 0.85rem;
     color: rgba(255, 255, 255, 0.75) !important;
