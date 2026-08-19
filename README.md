@@ -4,8 +4,6 @@ I collected Recreational Sports Facility occupancy for months, then turned it in
 
 **[Live dashboard](https://rsf-occupancy.plotly.app/)** · [Source](https://github.com/JohnnyMud/rsf-occupancy-tracker)
 
-![RSF occupancy dashboard](docs/dashboard.png)
-
 ## What it answers
 
 Berkeley students can see when the gym is actually busy before they walk over.
