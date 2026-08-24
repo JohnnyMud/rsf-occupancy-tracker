@@ -181,10 +181,9 @@ def navbar():
             ],
             fluid=True,
         ),
-        color="dark",
+        color="#003262",
         dark=True,
-        className="mb-4 py-3",
-        style={"backgroundColor": "#003262"},
+        className="app-navbar mb-4 py-3",
     )
 
 
@@ -281,18 +280,6 @@ def build_dashboard_content(df: pd.DataFrame, exclude_summer: bool):
     )
 
     return [
-        html.Div(
-            [
-                html.H1("When should you hit the gym?"),
-                html.P(
-                    f"Occupancy trends from {insights.date_start} to "
-                    f"{insights.date_end} · "
-                    f"{insights.total_readings} readings during operating hours"
-                ),
-                html.P(season_note, className="hero-season-note mb-0"),
-            ],
-            className="hero-section",
-        ),
         dbc.Row(
             [
                 dbc.Col(
@@ -480,10 +467,31 @@ def build_dashboard_content(df: pd.DataFrame, exclude_summer: bool):
     ]
 
 
+def build_hero_section(insights, exclude_summer: bool):
+    season_note = (
+        "School-year readings only (May–August excluded)"
+        if exclude_summer
+        else "Including summer months (May–August)"
+    )
+    return html.Div(
+        [
+            html.H1("RSF occupancy trends"),
+            html.P(
+                f"Occupancy trends from {insights.date_start} to "
+                f"{insights.date_end} · "
+                f"{insights.total_readings} readings during operating hours"
+            ),
+            html.P(season_note, className="hero-season-note mb-0"),
+        ],
+        className="hero-section",
+    )
+
+
 def build_dashboard_layout():
     return dbc.Container(
         [
             navbar(),
+            html.Div(id="hero-content"),
             summer_filter_controls(),
             html.Div(id="dashboard-content"),
         ],
@@ -518,22 +526,27 @@ app.layout = create_layout
 
 
 @callback(
+    Output("hero-content", "children"),
     Output("dashboard-content", "children"),
     Input("exclude-summer", "value"),
 )
 def update_dashboard_content(exclude_summer: bool | None):
     if _OCCUPANCY_DATA is None:
-        return build_empty_filter_content(bool(exclude_summer))
+        return None, build_empty_filter_content(bool(exclude_summer))
 
     exclude = bool(exclude_summer)
     filtered = fetch.filter_summer_months(_OCCUPANCY_DATA, exclude=exclude)
     if filtered.empty:
-        return build_empty_filter_content(exclude)
+        return None, build_empty_filter_content(exclude)
 
     try:
-        return build_dashboard_content(filtered, exclude_summer=exclude)
+        insights = analytics.compute_insights(filtered)
+        return (
+            build_hero_section(insights, exclude_summer=exclude),
+            build_dashboard_content(filtered, exclude_summer=exclude),
+        )
     except Exception as exc:
-        return dbc.Alert(
+        return None, dbc.Alert(
             f"Unable to update dashboard: {exc}",
             color="warning",
             className="unavailable-alert",

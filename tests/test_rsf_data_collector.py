@@ -120,3 +120,28 @@ def test_invalid_capacity_configuration_exits_early(monkeypatch):
 
     with pytest.raises(collector.ConfigurationError, match="must be an integer"):
         collector.CollectorSettings.from_env()
+
+
+def test_load_google_credentials_from_json_env(monkeypatch, tmp_path):
+    monkeypatch.setenv(
+        "GOOGLE_CREDENTIALS_JSON",
+        '{"type":"service_account","client_email":"demo@example.iam.gserviceaccount.com"}',
+    )
+    monkeypatch.delenv("GOOGLE_CREDENTIALS_BASE64", raising=False)
+
+    class FakeCredentials:
+        service_account_email = "demo@example.iam.gserviceaccount.com"
+
+    def fake_from_info(info, scopes):
+        assert info["client_email"] == "demo@example.iam.gserviceaccount.com"
+        assert scopes == collector.GOOGLE_SCOPES
+        return FakeCredentials()
+
+    monkeypatch.setattr(
+        collector.Credentials,
+        "from_service_account_info",
+        staticmethod(fake_from_info),
+    )
+
+    credentials = collector.load_google_credentials(tmp_path / "missing.json")
+    assert credentials.service_account_email == "demo@example.iam.gserviceaccount.com"

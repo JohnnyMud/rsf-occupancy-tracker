@@ -1,5 +1,7 @@
+import json
 import logging
 import os
+from base64 import b64decode
 from dataclasses import dataclass
 from datetime import datetime, time, timezone
 from pathlib import Path
@@ -178,23 +180,59 @@ def fetch_occupancy_count(
     return count
 
 
+def load_google_credentials(
+    credentials_path: Path | str | None = None,
+) -> Credentials:
+    """
+    Load service-account credentials from env or a local file.
+
+    Preference order:
+    1. GOOGLE_CREDENTIALS_JSON — full credentials.json contents
+    2. GOOGLE_CREDENTIALS_BASE64 — base64-encoded credentials.json
+    3. credentials file path (local / GitHub Actions)
+    """
+    credentials_json = os.getenv("GOOGLE_CREDENTIALS_JSON", "").strip()
+    if credentials_json:
+        try:
+            info = json.loads(credentials_json)
+        except json.JSONDecodeError as exc:
+            raise ConfigurationError(
+                "GOOGLE_CREDENTIALS_JSON must be valid JSON"
+            ) from exc
+        return Credentials.from_service_account_info(info, scopes=GOOGLE_SCOPES)
+
+    credentials_base64 = os.getenv("GOOGLE_CREDENTIALS_BASE64", "").strip()
+    if credentials_base64:
+        try:
+            decoded = b64decode(credentials_base64).decode("utf-8")
+            info = json.loads(decoded)
+        except Exception as exc:
+            raise ConfigurationError(
+                "GOOGLE_CREDENTIALS_BASE64 must be base64-encoded JSON"
+            ) from exc
+        return Credentials.from_service_account_info(info, scopes=GOOGLE_SCOPES)
+
+    resolved_credentials_path = Path(
+        credentials_path
+        or os.getenv("GOOGLE_CREDENTIALS_PATH")
+        or "credentials.json"
+    )
+    if not resolved_credentials_path.is_file():
+        raise ConfigurationError(
+            "Google credentials not found. Set GOOGLE_CREDENTIALS_JSON, "
+            "GOOGLE_CREDENTIALS_BASE64, or provide a credentials file."
+        )
+    return Credentials.from_service_account_file(
+        resolved_credentials_path,
+        scopes=GOOGLE_SCOPES,
+    )
+
+
 def setup_google_sheets(
     spreadsheet_id: str | None = None,
     credentials_path: Path | str | None = None,
 ):
-    resolved_credentials_path = Path(
-        credentials_path
-        or os.getenv("GOOGLE_CREDENTIALS_PATH", "credentials.json")
-    )
-    if not resolved_credentials_path.is_file():
-        raise ConfigurationError(
-            f"Google credentials not found at {resolved_credentials_path}"
-        )
-
-    credentials = Credentials.from_service_account_file(
-        resolved_credentials_path,
-        scopes=GOOGLE_SCOPES,
-    )
+    credentials = load_google_credentials(credentials_path)
     client = gspread.authorize(credentials)
     spreadsheet = client.open_by_key(
         spreadsheet_id or os.getenv("SPREADSHEET_ID") or DEFAULT_SPREADSHEET_ID
